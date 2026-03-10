@@ -1,4 +1,5 @@
 ﻿using AgentFive.Configuration;
+using AgentFive.Tasks.People;
 using Microsoft.Extensions.Configuration;
 
 var config = new ConfigurationBuilder()
@@ -6,11 +7,6 @@ var config = new ConfigurationBuilder()
     .Build();
     
 var settings = config.Get<AppSettings>()!;
-DebugKeys(settings);
-
-static void DebugKeys(AppSettings settings)
-{
-    Console.WriteLine($"Hub URL: {settings.HubUrl}");
-    Console.WriteLine($"Hub API Key: {settings.HubApiKey}");
-    Console.WriteLine($"OpenRouter API Key: {settings.OpenRouterApiKey}");
-}
+var peopleTask = new PeopleTask();
+var people = peopleTask.GetMalesAged20To40FromGrudziadz("Tasks/People/people.csv");
+peopleTask.DebugPrintPeople(people);
