@@ -3,12 +3,30 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+using AgentFive.Configuration;
+using AgentFive.Services.OpenRouter;
 
 namespace AgentFive.Tasks.People;
 
 public class PeopleTask
 {
-    private DateTime Today => DateTime.Today.AddDays(-1);
+	private DateTime Today => DateTime.Today;
+	private readonly AppSettings? _settings;
+	private readonly OpenRouterService? _openRouter;
+
+	public record OpenRouterResponse(List<Choice>? choices);
+	public record Choice(Message? message, string? content);
+	public record Message(string? role, string? content);
+	public record OpenRouterPeopleWrapper(List<TaggedPerson>? people);
+	public PeopleTask(AppSettings settings)
+	{
+		_settings = settings ?? throw new ArgumentNullException(nameof(settings));
+		if (string.IsNullOrWhiteSpace(_settings.OpenRouterApiKey))
+			throw new ArgumentException("OpenRouter API key not configured in AppSettings.OpenRouterApiKey");
+		_openRouter = new OpenRouterService(_settings.OpenRouterApiKey);
+	}
 
     public List<Person> GetMalesAged20To40FromGrudziadz(string filePath)
 	{
@@ -118,6 +136,7 @@ public class PeopleTask
 					sb.Append('"');
 					i++; // skip escaped quote
 				}
+
 				else
 				{
 					inQuotes = !inQuotes;
@@ -147,5 +166,161 @@ public class PeopleTask
 		}
 
 		return fields;
+	}
+
+	public async Task<List<TaggedPerson>> TagPeopleWithOpenRouterAsync(List<Person> people)
+	{
+		if (_openRouter == null)
+			throw new InvalidOperationException("OpenRouterService not initialized. Use PeopleTask(AppSettings) constructor.");
+
+		var allowedTags = new[] { "IT", "transport", "edukacja", "medycyna", "praca z ludźmi", "praca z pojazdami", "praca fizyczna" };
+
+		var records = new List<object>();
+		foreach (var p in people)
+		{
+			if (p == null) continue;
+			records.Add(new {
+				name = p.FirstName,
+				surname = p.LastName,
+				gender = string.IsNullOrWhiteSpace(p.Gender) ? "" : p.Gender.Substring(0,1).ToUpperInvariant(),
+				born = p.DateOfBirth.Year,
+				city = p.City,
+				description = p.Description
+			});
+		}
+
+		var systemPrompt = $"Twoim zadaniem jest otagowanie zawodów na podstawie opisu stanowiska.\n" +
+				"Masz do dyspozycji następujące tagi: " + string.Join(", ", allowedTags) + ".\n" +
+				"Dla każdej osoby zwróć rekord JSON z polami: name, surname, gender, born, city, tags (lista tagów).\n" +
+				"Zwróć wyłącznie listę rekordów w formacie JSON (żaden dodatkowy tekst).\n" +
+				"Jeżeli opis sugeruje kilka tagów, przypisz wszystkie pasujące. Używaj tylko tagów z powyższej listy.";
+
+		var userPrompt = new {
+			role = "user",
+			content = JsonSerializer.Serialize(new { people = records }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase })
+		};
+
+		var jsonSchema = new {
+			name = "PeopleTagging",
+			strict = true,
+			schema = new {
+				type = "object",
+				properties = new {
+					people = new {
+						type = "array",
+						items = new {
+							type = "object",
+							properties = new {
+								name = new { type = "string" },
+								surname = new { type = "string" },
+								gender = new { type = "string" },
+								born = new { type = "integer" },
+								city = new { type = "string" },
+								tags = new { type = "array", items = new { type = "string" } }
+							},
+							required = new[] { "name", "surname", "gender", "born", "city", "tags" },
+							additionalProperties = false
+						}
+					}
+				},
+				required = new[] { "people" },
+				additionalProperties = false
+			}
+		};
+
+		var response_format = new {
+			type = "json_schema",
+			json_schema = jsonSchema
+		};
+
+		var payload = new {
+			model = "gpt-4o-mini",
+			messages = new[] {
+				new { role = "system", content = systemPrompt },
+				userPrompt
+			},
+			temperature = 0.0,
+			response_format
+		};
+
+		var respText = await _openRouter.SendChatCompletionAsync(payload).ConfigureAwait(false);
+
+		// Try to deserialize the response into known models first, then fall back to scanning for a JSON array.
+		var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+		// Prefer parsing the OpenRouter response shape (choices -> message.content)
+		try
+		{
+			var or = JsonSerializer.Deserialize<OpenRouterResponse>(respText, opts);
+			if (or?.choices != null && or.choices.Count > 0)
+			{
+				var first = or.choices[0];
+				var assistantContent = first?.message?.content ?? first?.content;
+				if (!string.IsNullOrWhiteSpace(assistantContent))
+				{
+					// If assistantContent is a quoted JSON string, unquote it
+					if (assistantContent.Length > 0 && assistantContent[0] == '"')
+					{
+						try
+						{
+							assistantContent = JsonSerializer.Deserialize<string>(assistantContent, opts) ?? assistantContent;
+						}
+						catch
+						{
+							// ignore and continue with original content
+						}
+					}
+
+					try
+					{
+						// Prefer wrapper object { people: [...] } as in the sample
+						var wrapper = JsonSerializer.Deserialize<OpenRouterPeopleWrapper>(assistantContent, opts);
+						if (wrapper?.people != null && wrapper.people.Count > 0)
+							return wrapper.people;
+
+						// Fallback: try as array of TaggedPerson
+						var parsed = JsonSerializer.Deserialize<List<TaggedPerson>>(assistantContent, opts);
+						if (parsed != null && parsed.Count > 0)
+							return parsed;
+					}
+					catch (JsonException)
+					{
+						// fall through to content scanning
+					}
+				}
+			}
+		}
+		catch (JsonException)
+		{
+			// ignore and fall back
+		}
+
+		// fallback: try to find any JSON array in the raw response text
+		return ParseTaggedPersonsFromContent(respText);
+	}
+
+	private static List<TaggedPerson> ParseTaggedPersonsFromContent(string content)
+	{
+		if (string.IsNullOrWhiteSpace(content)) return new List<TaggedPerson>();
+
+		// attempt to locate first JSON array in the text
+		var start = content.IndexOf('[');
+		var end = content.LastIndexOf(']');
+		if (start >= 0 && end > start)
+		{
+			var json = content.Substring(start, end - start + 1);
+			try
+			{
+				var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+				var list = JsonSerializer.Deserialize<List<TaggedPerson>>(json, opts);
+				return list ?? new List<TaggedPerson>();
+			}
+			catch (JsonException)
+			{
+				return new List<TaggedPerson>();
+			}
+		}
+
+		return new List<TaggedPerson>();
 	}
 }

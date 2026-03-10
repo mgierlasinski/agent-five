@@ -11,3 +11,11 @@ public record Person(
 	string Country,
 	string Description
 );
+
+public record TaggedPerson(
+	string name, 
+	string surname, 
+	string gender, 
+	int born, 
+	string city, 
+	List<string> tags);
