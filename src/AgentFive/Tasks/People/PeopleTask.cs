@@ -16,9 +16,36 @@ public class PeopleTask
 		_openRouter = new OpenRouterService(_settings);
 	}
 
-    public List<Person> GetMalesAged20To40FromGrudziadz(string filePath)
+	public async Task RunAsync()
 	{
-		var people = CsvHelper.ParsePeopleFromCsv(filePath);
+		try
+		{
+			var people = GetMalesAged20To40FromGrudziadz();
+			var opts = new JsonSerializerOptions
+			{
+				WriteIndented = true,
+				Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+			};
+
+			var tagged = await TagPeopleWithOpenRouterAsync(people);
+			File.WriteAllText("tagged_people.json", JsonSerializer.Serialize(tagged, opts));
+
+			var transportOnly = tagged.Where(x => x.tags.Contains("transport")).ToList();
+			var transportJson = JsonSerializer.Serialize(transportOnly, opts);
+			File.WriteAllText("transport_people.json", transportJson);
+
+			Console.WriteLine("Tagged people:");
+			Console.WriteLine(transportJson);
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"OpenRouter tagging skipped or failed: {ex.Message}");
+		}
+	}
+
+	private List<Person> GetMalesAged20To40FromGrudziadz()
+	{
+		var people = CsvHelper.ParsePeopleFromCsv("Tasks/People/people.csv");
 		var referenceDate = Today;
 		var result = new List<Person>();
 
@@ -46,7 +73,7 @@ public class PeopleTask
 		return result;
 	}
 
-	public async Task<List<TaggedPerson>> TagPeopleWithOpenRouterAsync(List<Person> people)
+	private async Task<List<TaggedPerson>> TagPeopleWithOpenRouterAsync(IEnumerable<Person> people)
 	{
 		if (_openRouter == null)
 			throw new InvalidOperationException("OpenRouterService not initialized. Use PeopleTask(AppSettings) constructor.");
@@ -56,13 +83,14 @@ public class PeopleTask
 
 		foreach (var p in people)
 		{
-			if (p == null) 
+			if (p == null)
 				continue;
 
-			records.Add(new {
+			records.Add(new
+			{
 				name = p.FirstName,
 				surname = p.LastName,
-				gender = string.IsNullOrWhiteSpace(p.Gender) ? "" : p.Gender.Substring(0,1).ToUpperInvariant(),
+				gender = string.IsNullOrWhiteSpace(p.Gender) ? "" : p.Gender.Substring(0, 1).ToUpperInvariant(),
 				born = p.DateOfBirth.Year,
 				city = p.City,
 				description = p.Description
@@ -77,17 +105,23 @@ public class PeopleTask
 
 		var userContent = JsonSerializer.Serialize(new { people = records }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-		var jsonSchema = new {
+		var jsonSchema = new
+		{
 			name = "PeopleTagging",
 			strict = true,
-			schema = new {
+			schema = new
+			{
 				type = "object",
-				properties = new {
-					people = new {
+				properties = new
+				{
+					people = new
+					{
 						type = "array",
-						items = new {
+						items = new
+						{
 							type = "object",
-							properties = new {
+							properties = new
+							{
 								name = new { type = "string" },
 								surname = new { type = "string" },
 								gender = new { type = "string" },
@@ -107,7 +141,7 @@ public class PeopleTask
 
 		var responseFormat = new ResponseFormat("json_schema", jsonSchema);
 
-		var messages = new[] 
+		var messages = new[]
 		{
 			new ChatMessage("system", systemPrompt),
 			new ChatMessage("user", userContent)
