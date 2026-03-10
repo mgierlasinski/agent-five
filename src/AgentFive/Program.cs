@@ -3,6 +3,7 @@ using AgentFive.Tasks.People;
 using Microsoft.Extensions.Configuration;
 
 var config = new ConfigurationBuilder()
+    .AddJsonFile(ConfigHelper.GetPath("appsettings.json"), optional: true, reloadOnChange: true)
     .AddUserSecrets<Program>()
     .Build();
 

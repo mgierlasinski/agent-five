@@ -1,5 +1,3 @@
-using System;
-
 namespace AgentFive.Tasks.People;
 
 public record Person(
@@ -11,6 +9,8 @@ public record Person(
 	string Country,
 	string Description
 );
+
+public record TaggedPeopleResponse(List<TaggedPerson>? people);
 
 public record TaggedPerson(
 	string name, 
