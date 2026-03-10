@@ -5,6 +5,12 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UserSecretsId>0c9f788a-ac89-4932-b0a4-52ab4d6d73c6</UserSecretsId>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.3" />
+  </ItemGroup>
 
 </Project>
