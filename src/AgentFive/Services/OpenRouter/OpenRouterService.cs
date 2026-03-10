@@ -25,20 +25,21 @@ public class OpenRouterService : IDisposable
 		_http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
 	}
 
-	public async Task<TResponse?> SendChatCompletionAndParseAsync<TResponse>(object payload) where TResponse : class
+	public async Task<TResponse?> GetStructuredResponseAsync<TResponse>(string systemPrompt, string userPrompt, JsonSchemaObject? jsonSchema = null, string model = "gpt-4o-mini", double temperature = 0.0) where TResponse : class
 	{
-		var respText = await SendChatCompletionAsync(payload).ConfigureAwait(false);
+		var payload = BuildChatPayload(model, systemPrompt, userPrompt, temperature, jsonSchema);
+		var respText = await SendRequestAsync(payload).ConfigureAwait(false);
 		var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
 		// Try parse OpenRouter response envelope first (choices -> message.content / content)
 		try
 		{
 			// local records to match expected OpenRouter shape
-			var or = JsonSerializer.Deserialize<OpenRouterResponse>(respText, opts);
-			if (or?.choices != null && or.choices.Count > 0)
+			var or = JsonSerializer.Deserialize<ChatResponse>(respText, opts);
+			if (or?.Choices != null && or.Choices.Count > 0)
 			{
-				var first = or.choices[0];
-				var assistantContent = first?.message?.content ?? first?.content;
+				var first = or.Choices[0];
+				var assistantContent = first?.Message?.Content ?? first?.Content;
 				if (!string.IsNullOrWhiteSpace(assistantContent))
 				{
 					// If assistantContent is a quoted JSON string, unquote it
@@ -87,7 +88,20 @@ public class OpenRouterService : IDisposable
 		return default;
 	}
 
-	public async Task<string> SendChatCompletionAsync(object payload)
+	private ChatPayload BuildChatPayload(string model, string systemPrompt, string userPrompt, double temperature = 0.0, JsonSchemaObject? jsonSchema = null)
+	{
+		var messages = new[]
+		{
+			new ChatMessage("system", systemPrompt),
+			new ChatMessage("user", userPrompt)
+		};
+
+		JsonResponseFormat? responseFormat = jsonSchema != null ? new JsonResponseFormat("json_schema", jsonSchema) : null;
+
+		return new ChatPayload(model, messages, temperature, responseFormat);
+	}
+
+	private async Task<string> SendRequestAsync(ChatPayload payload)
 	{
 		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 		using var content = new StringContent(json, Encoding.UTF8, "application/json");

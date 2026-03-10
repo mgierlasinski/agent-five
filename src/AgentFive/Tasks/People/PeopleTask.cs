@@ -27,7 +27,7 @@ public class PeopleTask
 				Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
 			};
 
-			var tagged = await TagPeopleWithOpenRouterAsync(people);
+			var tagged = await TagPeopleWithAIAsync(people);
 			File.WriteAllText("tagged_people.json", JsonSerializer.Serialize(tagged, opts));
 
 			var transportOnly = tagged.Where(x => x.tags.Contains("transport")).ToList();
@@ -73,7 +73,7 @@ public class PeopleTask
 		return result;
 	}
 
-	private async Task<List<TaggedPerson>> TagPeopleWithOpenRouterAsync(IEnumerable<Person> people)
+	private async Task<List<TaggedPerson>> TagPeopleWithAIAsync(IEnumerable<Person> people)
 	{
 		if (_openRouter == null)
 			throw new InvalidOperationException("OpenRouterService not initialized. Use PeopleTask(AppSettings) constructor.");
@@ -105,11 +105,10 @@ public class PeopleTask
 
 		var userContent = JsonSerializer.Serialize(new { people = records }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-		var jsonSchema = new
-		{
-			name = "PeopleTagging",
-			strict = true,
-			schema = new
+		var jsonSchema = new JsonSchemaObject(
+			"PeopleTagging",
+			true,
+			new
 			{
 				type = "object",
 				properties = new
@@ -137,21 +136,11 @@ public class PeopleTask
 				required = new[] { "people" },
 				additionalProperties = false
 			}
-		};
+		);
 
-		var responseFormat = new ResponseFormat("json_schema", jsonSchema);
-
-		var messages = new[]
-		{
-			new ChatMessage("system", systemPrompt),
-			new ChatMessage("user", userContent)
-		};
-
-		var payload = new ChatPayload("gpt-4o-mini", messages, 0.0, responseFormat);
-
-		var wrapper = await _openRouter.SendChatCompletionAndParseAsync<TaggedPeopleResponse>(payload).ConfigureAwait(false);
-		if (wrapper?.people != null && wrapper.people.Count > 0)
-			return wrapper.people;
+		var response = await _openRouter.GetStructuredResponseAsync<TaggedPeopleResponse>(systemPrompt, userContent, jsonSchema).ConfigureAwait(false);
+		if (response?.people != null && response.people.Count > 0)
+			return response.people;
 
 		return new List<TaggedPerson>();
 	}
