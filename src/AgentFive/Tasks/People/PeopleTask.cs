@@ -30,7 +30,7 @@ public class PeopleTask
 			var tagged = await TagPeopleWithAIAsync(people);
 			File.WriteAllText("tagged_people.json", JsonSerializer.Serialize(tagged, opts));
 
-			var transportOnly = tagged.Where(x => x.tags.Contains("transport")).ToList();
+			var transportOnly = tagged.Where(x => x.Tags.Contains("transport")).ToList();
 			var transportJson = JsonSerializer.Serialize(transportOnly, opts);
 			File.WriteAllText("transport_people.json", transportJson);
 
@@ -79,69 +79,87 @@ public class PeopleTask
 			throw new InvalidOperationException("OpenRouterService not initialized. Use PeopleTask(AppSettings) constructor.");
 
 		var allowedTags = new[] { "IT", "transport", "edukacja", "medycyna", "praca z ludźmi", "praca z pojazdami", "praca fizyczna" };
-		var records = new List<object>();
 
-		foreach (var p in people)
-		{
-			if (p == null)
-				continue;
+		// Convert to list to preserve ordering/indexes
+		var personsList = people?.Where(p => p != null).ToList() ?? new List<Person>();
 
-			records.Add(new
-			{
-				name = p.FirstName,
-				surname = p.LastName,
-				gender = string.IsNullOrWhiteSpace(p.Gender) ? "" : p.Gender.Substring(0, 1).ToUpperInvariant(),
-				born = p.DateOfBirth.Year,
-				city = p.City,
-				description = p.Description
-			});
-		}
+		// Prepare minimal payload: numbered descriptions only
+		var descriptions = personsList.Select((p, idx) => new { index = idx, description = p.Description ?? string.Empty }).ToList();
 
 		var systemPrompt = $"Twoim zadaniem jest otagowanie zawodów na podstawie opisu stanowiska.\n" +
-				"Masz do dyspozycji następujące tagi: " + string.Join(", ", allowedTags) + ".\n" +
-				"Dla każdej osoby zwróć rekord JSON z polami: name, surname, gender, born, city, tags (lista tagów).\n" +
-				"Zwróć wyłącznie listę rekordów w formacie JSON (żaden dodatkowy tekst).\n" +
-				"Jeżeli opis sugeruje kilka tagów, przypisz wszystkie pasujące. Używaj tylko tagów z powyższej listy.";
+			"Masz do dyspozycji następujące tagi: " + string.Join(", ", allowedTags) + ".\n" +
+			"Dla każdej pozycji w liście zwróć obiekt z polami: index (numer rekordu odpowiadający przesłanej liście, 0-based) oraz tags (lista tagów).\n" +
+			"Zwróć wyłącznie JSON o postaci: { \"results\": [ { \"index\": 0, \"tags\": [\"tag1\"] }, ... ] } i NIE DODAWAJ żadnego dodatkowego tekstu.\n" +
+			"Używaj tylko tagów z powyższej listy. Jeżeli nie pasuje żaden tag, zwróć pustą listę tags.";
 
-		var userContent = JsonSerializer.Serialize(new { people = records }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+		var userContent = JsonSerializer.Serialize(new { descriptions = descriptions }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
 		var jsonSchema = new JsonSchemaObject(
-			"PeopleTagging",
+			"IndexTagging",
 			true,
 			new
 			{
 				type = "object",
 				properties = new
 				{
-					people = new
+					results = new
 					{
 						type = "array",
 						items = new
 						{
 							type = "object",
+							description = "Obiekt zawierający numer rekordu oraz przypisane tagi; pozwala powiązać wynik z elementem wejściowym.",
 							properties = new
 							{
-								name = new { type = "string" },
-								surname = new { type = "string" },
-								gender = new { type = "string" },
-								born = new { type = "integer" },
-								city = new { type = "string" },
-								tags = new { type = "array", items = new { type = "string" } }
+								index = new 
+								{ 
+									type = "integer", 
+									description = "Numer rekordu odpowiadający przesłanej liście (0-based). Używany do mapowania wyników do oryginalnych osób)." 
+								},
+								tags = new 
+								{ 
+									type = "array", 
+									items = new { type = "string" }, 
+									description = "Lista dopasowanych tagów (używaj tylko tagów z dozwolonej listy)." 
+								}
 							},
-							required = new[] { "name", "surname", "gender", "born", "city", "tags" },
+							required = new[] { "index", "tags" },
 							additionalProperties = false
 						}
 					}
 				},
-				required = new[] { "people" },
+				required = new[] { "results" },
 				additionalProperties = false
 			}
 		);
 
-		var response = await _openRouter.GetStructuredResponseAsync<TaggedPeopleResponse>(systemPrompt, userContent, jsonSchema).ConfigureAwait(false);
-		if (response?.people != null && response.people.Count > 0)
-			return response.people;
+		var response = await _openRouter.GetStructuredResponseAsync<IndexTagResponse>(systemPrompt, userContent, jsonSchema).ConfigureAwait(false);
 
-		return new List<TaggedPerson>();
+		var result = new List<TaggedPerson>();
+		if (response?.Results == null || response.Results.Count == 0)
+			return result;
+
+		foreach (var r in response.Results)
+		{
+			if (r == null)
+				continue;
+
+			if (r.Index < 0 || r.Index >= personsList.Count)
+				continue;
+
+			var p = personsList[r.Index];
+			var tags = r.Tags ?? new List<string>();
+
+			result.Add(new TaggedPerson(
+				p.FirstName,
+				p.LastName,
+				string.IsNullOrWhiteSpace(p.Gender) ? string.Empty : p.Gender.Substring(0, 1).ToUpperInvariant(),
+				p.DateOfBirth.Year,
+				p.City,
+				tags
+			));
+		}
+
+		return result;
 	}
 }
