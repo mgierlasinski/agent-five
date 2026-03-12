@@ -14,10 +14,18 @@ var settings = config.Get<AppSettings>()!;
 using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
 var logger = factory.CreateLogger<Program>();
 
-if (!File.Exists(ConfigHelper.GetPath(PeopleTask.PeopleTransport)))
+var tasks = new Dictionary<string, Func<Task>>
 {
-    logger.LogInformation("Missing people transport input. Running PeopleTask first.");
-    await new PeopleTask(settings, logger).RunAsync();
-}
+    ["people"] = async () => await new PeopleTask(settings, logger).RunAsync(),
+    ["findhim"] = async () =>
+    {
+        if (!File.Exists(PeopleTask.PeopleTransport))
+        {
+            logger.LogInformation("Missing people transport input. Running PeopleTask first.");
+            await new PeopleTask(settings, logger).RunAsync();
+        }
+        await new FindHimTask(settings, logger).RunAsync();
+    }
+};
 
-await new FindHimTask(settings, logger).RunAsync();
+await tasks["findhim"].Invoke();
