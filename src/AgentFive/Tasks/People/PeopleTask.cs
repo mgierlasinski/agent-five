@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AgentFive.Configuration;
 using AgentFive.Services.OpenRouter;
+using Microsoft.Extensions.Logging;
 
 namespace AgentFive.Tasks.People;
 
@@ -8,12 +9,14 @@ public class PeopleTask
 {
 	private DateTime Today => DateTime.Today;
 	private readonly AppSettings? _settings;
-	private readonly OpenRouterService? _openRouter;
+    private readonly ILogger _logger;
+    private readonly OpenRouterService? _openRouter;
 
-	public PeopleTask(AppSettings settings)
+	public PeopleTask(AppSettings settings, ILogger logger)
 	{
-		_settings = settings ?? throw new ArgumentNullException(nameof(settings));
-		_openRouter = new OpenRouterService(_settings);
+		_settings = settings;
+        _logger = logger;
+        _openRouter = new OpenRouterService(_settings, logger);
 	}
 
 	public async Task RunAsync()
@@ -28,24 +31,23 @@ public class PeopleTask
 			};
 
 			var tagged = await TagPeopleWithAIAsync(people);
-			File.WriteAllText("tagged_people.json", JsonSerializer.Serialize(tagged, opts));
+			File.WriteAllText(PeopleFiles.PeopleTagged, JsonSerializer.Serialize(tagged, opts));
 
 			var transportOnly = tagged.Where(x => x.Tags.Contains("transport")).ToList();
 			var transportJson = JsonSerializer.Serialize(transportOnly, opts);
-			File.WriteAllText("transport_people.json", transportJson);
-
-			Console.WriteLine("Tagged people:");
-			Console.WriteLine(transportJson);
+			File.WriteAllText(PeopleFiles.PeopleTransport, transportJson);
+			
+			_logger.LogInformation("People tagged with transport: {People}", transportJson);
 		}
 		catch (Exception ex)
 		{
-			Console.WriteLine($"OpenRouter tagging skipped or failed: {ex.Message}");
+			_logger.LogError(ex, "People task failed");
 		}
 	}
 
 	private List<Person> GetMalesAged20To40FromGrudziadz()
 	{
-		var people = CsvHelper.ParsePeopleFromCsv("Tasks/People/people.csv");
+		var people = CsvHelper.ParsePeopleFromCsv(PeopleFiles.PeopleCsv);
 		var referenceDate = Today;
 		var result = new List<Person>();
 

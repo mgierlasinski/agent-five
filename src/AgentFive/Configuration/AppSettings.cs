@@ -6,4 +6,5 @@ public class AppSettings
     public string HubApiKey { get; set; } = null!;
     public string OpenRouterUrl { get; set; } = null!;
     public string OpenRouterApiKey { get; set; } = null!;
+    public string OpenRouterFindHimModel { get; set; } = "openai/gpt-4.1-mini";
 }
