@@ -7,6 +7,10 @@ namespace AgentFive.Tasks.People;
 
 public class PeopleTask
 {
+	public const string PeopleCsv = "Tasks/People/people.csv";
+    public const string PeopleTagged = "people_tagged.json";
+    public const string PeopleTransport = "people_transport.json";
+
 	private DateTime Today => DateTime.Today;
 	private readonly AppSettings? _settings;
     private readonly ILogger _logger;
@@ -31,11 +35,11 @@ public class PeopleTask
 			};
 
 			var tagged = await TagPeopleWithAIAsync(people);
-			File.WriteAllText(PeopleFiles.PeopleTagged, JsonSerializer.Serialize(tagged, opts));
+			File.WriteAllText(PeopleTagged, JsonSerializer.Serialize(tagged, opts));
 
 			var transportOnly = tagged.Where(x => x.Tags.Contains("transport")).ToList();
 			var transportJson = JsonSerializer.Serialize(transportOnly, opts);
-			File.WriteAllText(PeopleFiles.PeopleTransport, transportJson);
+			File.WriteAllText(PeopleTransport, transportJson);
 			
 			_logger.LogInformation("People tagged with transport: {People}", transportJson);
 		}
@@ -47,7 +51,7 @@ public class PeopleTask
 
 	private List<Person> GetMalesAged20To40FromGrudziadz()
 	{
-		var people = CsvHelper.ParsePeopleFromCsv(PeopleFiles.PeopleCsv);
+		var people = CsvHelper.ParsePeopleFromCsv(PeopleCsv);
 		var referenceDate = Today;
 		var result = new List<Person>();
 

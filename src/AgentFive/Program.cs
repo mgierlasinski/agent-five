@@ -14,7 +14,7 @@ var settings = config.Get<AppSettings>()!;
 using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
 var logger = factory.CreateLogger<Program>();
 
-if (!File.Exists(ConfigHelper.GetPath(PeopleFiles.PeopleTransport)))
+if (!File.Exists(ConfigHelper.GetPath(PeopleTask.PeopleTransport)))
 {
     logger.LogInformation("Missing people transport input. Running PeopleTask first.");
     await new PeopleTask(settings, logger).RunAsync();

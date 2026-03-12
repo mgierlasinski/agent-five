@@ -7,6 +7,8 @@ namespace AgentFive.Services.OpenRouter;
 
 public class OpenRouterService : IDisposable
 {
+	private const string DefaultModel = "gpt-4o-mini";
+
 	private readonly HttpClient _httpClient;
 	private readonly AppSettings _settings;
     private readonly ILogger _logger;
@@ -27,7 +29,12 @@ public class OpenRouterService : IDisposable
 		_httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _settings.OpenRouterApiKey);
 	}
 
-	public async Task<TResponse?> GetStructuredResponseAsync<TResponse>(string systemPrompt, string userPrompt, JsonSchemaObject? jsonSchema = null, string model = "gpt-4o-mini", double temperature = 0.0) where TResponse : class
+	public async Task<TResponse?> GetStructuredResponseAsync<TResponse>(
+		string systemPrompt, 
+		string userPrompt, 
+		JsonSchemaObject? jsonSchema = null, 
+		string model = DefaultModel, 
+		double temperature = 0.0) where TResponse : class
 	{
 		var payload = BuildChatPayload(model, systemPrompt, userPrompt, temperature, jsonSchema);
 		var respText = await SendRequestAsync(payload).ConfigureAwait(false);
@@ -41,7 +48,7 @@ public class OpenRouterService : IDisposable
 		IReadOnlyCollection<ChatToolDefinition> tools,
 		Func<ChatToolCall, Task<string>> toolHandler,
 		JsonSchemaObject? jsonSchema = null,
-		string model = "gpt-4o-mini",
+		string model = DefaultModel,
 		double temperature = 0.0,
 		int maxIterations = 10) where TResponse : class
 	{

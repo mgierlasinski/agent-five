@@ -10,12 +10,14 @@ namespace AgentFive.Tasks.FindHim;
 
 public class FindHimTask
 {
+    private const string VerifyRequest = "findhim_verify_request.json";
+    private const string VerifyResponse = "findhim_verify_response.json";
 	private const int MaxAgentIterations = 12;
 
 	private readonly AppSettings _settings;
 	private readonly ILogger _logger;
 	private readonly OpenRouterService _openRouter;
-	private readonly HttpClient _hubHttpClient;
+	private readonly HubClient _hubClient;
 	private readonly JsonSerializerOptions _jsonOptions = new()
 	{
 		PropertyNameCaseInsensitive = true,
@@ -28,10 +30,7 @@ public class FindHimTask
 		_settings = settings;
 		_logger = logger;
 		_openRouter = new OpenRouterService(settings, logger);
-		_hubHttpClient = new HttpClient
-		{
-			BaseAddress = new Uri(settings.HubUrl)
-		};
+		_hubClient = new HubClient(settings, logger);
 	}
 
 	public async Task RunAsync()
@@ -52,7 +51,6 @@ public class FindHimTask
 				"findhim",
 				new VerifyAnswer(result.Name, result.Surname, result.AccessLevel, result.PowerPlant));
 
-			await SaveVerifyPayloadAsync(payload).ConfigureAwait(false);
 			await VerifyAsync(payload).ConfigureAwait(false);
 		}
 		catch (Exception ex)
@@ -61,14 +59,14 @@ public class FindHimTask
 		}
 		finally
 		{
-			_hubHttpClient.Dispose();
+			_hubClient.Dispose();
 			_openRouter.Dispose();
 		}
 	}
 
 	private List<TaggedPerson> LoadSuspects()
 	{
-		var inputPath = ConfigHelper.GetPath(PeopleFiles.PeopleTransport);
+		var inputPath = PeopleTask.PeopleTransport;
 		if (!File.Exists(inputPath))
 		{
 			throw new FileNotFoundException($"Missing people transport file: {inputPath}", inputPath);
@@ -88,15 +86,7 @@ public class FindHimTask
 
 	private async Task<List<PowerPlantDefinition>> GetPowerPlantsAsync()
 	{
-		var relativeUrl = $"data/{_settings.HubApiKey}/findhim_locations.json";
-		_logger.LogInformation("Requesting power plants: GET {Url}", relativeUrl);
-
-		using var response = await _hubHttpClient.GetAsync(relativeUrl).ConfigureAwait(false);
-		var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-		_logger.LogInformation("Received power plants response: {Response}", responseBody);
-		response.EnsureSuccessStatusCode();
-
-		var powerPlants = ParsePowerPlants(responseBody);
+		var powerPlants = await _hubClient.GetPowerPlantsAsync().ConfigureAwait(false);
 		if (powerPlants.Any(x => !x.Latitude.HasValue || !x.Longitude.HasValue))
 		{
 			powerPlants = await EnrichPowerPlantsWithCoordinatesAsync(powerPlants).ConfigureAwait(false);
@@ -142,7 +132,7 @@ public class FindHimTask
 			tools,
 			toolCall => HandleToolCallAsync(toolCall, suspects, powerPlants),
 			schema,
-			_settings.OpenRouterFindHimModel,
+			_settings.OpenRouterModel,
 			0.0,
 			MaxAgentIterations).ConfigureAwait(false);
 	}
@@ -248,19 +238,6 @@ public class FindHimTask
 		}
 	}
 
-	private async Task<string> HandleGetPersonLocationsAsync(string argumentsJson)
-	{
-		var args = DeserializeToolArguments<PersonLocationArgs>(argumentsJson, "get_person_locations");
-		var payload = new
-		{
-			apikey = _settings.HubApiKey,
-			name = args.Name,
-			surname = args.Surname
-		};
-
-		return await PostJsonAsync("api/location", payload).ConfigureAwait(false);
-	}
-
 	private async Task<string> HandleEvaluateSuspectAsync(string argumentsJson, IReadOnlyCollection<TaggedPerson> suspects, IReadOnlyCollection<PowerPlantDefinition> powerPlants)
 	{
 		var args = DeserializeToolArguments<PersonLocationArgs>(argumentsJson, "evaluate_suspect");
@@ -273,9 +250,7 @@ public class FindHimTask
 			throw new InvalidOperationException($"Unknown suspect: {args.Name} {args.Surname}");
 		}
 
-		var locationsJson = await HandleGetPersonLocationsAsync(argumentsJson).ConfigureAwait(false);
-		var locations = JsonSerializer.Deserialize<List<CoordinateArgs>>(locationsJson, _jsonOptions);
-
+        var locations = await _hubClient.GetPersonLocationsAsync(args.Name, args.Surname).ConfigureAwait(false);
 		if (locations == null || locations.Count == 0)
 		{
 			return JsonSerializer.Serialize(new
@@ -312,15 +287,8 @@ public class FindHimTask
 	private async Task<string> HandleGetAccessLevelAsync(string argumentsJson)
 	{
 		var args = DeserializeToolArguments<AccessLevelArgs>(argumentsJson, "get_access_level");
-		var payload = new
-		{
-			apikey = _settings.HubApiKey,
-			name = args.Name,
-			surname = args.Surname,
-			birthYear = args.BirthYear
-		};
-
-		return await PostJsonAsync("api/accesslevel", payload).ConfigureAwait(false);
+		var accessLevel = await _hubClient.GetAccessLevelAsync(args.Name, args.Surname, args.BirthYear).ConfigureAwait(false);
+		return JsonSerializer.Serialize(accessLevel, _jsonOptions);
 	}
 
 	private TArgs DeserializeToolArguments<TArgs>(string argumentsJson, string toolName)
@@ -332,20 +300,6 @@ public class FindHimTask
 		}
 
 		return args;
-	}
-
-	private async Task<string> PostJsonAsync(string relativeUrl, object payload)
-	{
-		var json = JsonSerializer.Serialize(payload, _jsonOptions);
-		_logger.LogInformation("Sending hub request: POST {Url} {Payload}", relativeUrl, json);
-
-		using var content = new StringContent(json, Encoding.UTF8, "application/json");
-		using var response = await _hubHttpClient.PostAsync(relativeUrl, content).ConfigureAwait(false);
-		var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-		_logger.LogInformation("Received hub response from {Url}: {Response}", relativeUrl, responseBody);
-		response.EnsureSuccessStatusCode();
-
-		return responseBody;
 	}
 
 	private MatchedPowerPlant FindNearestByDistance(double latitude, double longitude, IReadOnlyCollection<PowerPlantDefinition> powerPlants)
@@ -392,7 +346,7 @@ public class FindHimTask
 			systemPrompt,
 			userPrompt,
 			schema,
-			_settings.OpenRouterFindHimModel,
+			_settings.OpenRouterModel,
 			0.0).ConfigureAwait(false);
 
 		if (response == null)
@@ -445,7 +399,7 @@ public class FindHimTask
 			systemPrompt,
 			userPrompt,
 			schema,
-			_settings.OpenRouterFindHimModel,
+			_settings.OpenRouterModel,
 			0.0).ConfigureAwait(false);
 
 		if (response?.Results == null || response.Results.Count == 0)
@@ -464,71 +418,15 @@ public class FindHimTask
 		return enriched;
 	}
 
-	private async Task SaveVerifyPayloadAsync(VerifyRequest payload)
-	{
-		var path = ConfigHelper.GetPath("findhim_verify.json");
-		var json = JsonSerializer.Serialize(payload, _jsonOptions);
-		await File.WriteAllTextAsync(path, json).ConfigureAwait(false);
-		_logger.LogInformation("Saved verify payload to {Path}", path);
-	}
-
 	private async Task VerifyAsync(VerifyRequest payload)
 	{
-		var response = await PostJsonAsync("verify", payload).ConfigureAwait(false);
-		_logger.LogInformation("Verify response: {Response}", response);
-	}
+        var json = JsonSerializer.Serialize(payload, _jsonOptions);
+		await File.WriteAllTextAsync(VerifyRequest, json).ConfigureAwait(false);
 
-	private List<PowerPlantDefinition> ParsePowerPlants(string json)
-	{
-		using var document = JsonDocument.Parse(json);
-		if (!document.RootElement.TryGetProperty("power_plants", out var powerPlantsElement) || powerPlantsElement.ValueKind != JsonValueKind.Object)
-		{
-			throw new InvalidOperationException("Invalid power plant response: missing power_plants object.");
-		}
+		var response = await _hubClient.VerifyAsync(payload).ConfigureAwait(false);
 
-		var results = new List<PowerPlantDefinition>();
-		foreach (var property in powerPlantsElement.EnumerateObject())
-		{
-			var code = property.Value.TryGetProperty("code", out var codeElement)
-				? codeElement.GetString() ?? string.Empty
-				: string.Empty;
-
-			results.Add(new PowerPlantDefinition(
-				property.Name,
-				code,
-				TryGetDouble(property.Value, "latitude", "lat"),
-				TryGetDouble(property.Value, "longitude", "lon", "lng")));
-		}
-
-		if (results.Count == 0)
-		{
-			throw new InvalidOperationException("Power plant catalog is empty.");
-		}
-
-		return results;
-	}
-
-	private static double? TryGetDouble(JsonElement element, params string[] propertyNames)
-	{
-		foreach (var propertyName in propertyNames)
-		{
-			if (!element.TryGetProperty(propertyName, out var value))
-			{
-				continue;
-			}
-
-			if (value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var number))
-			{
-				return number;
-			}
-
-			if (value.ValueKind == JsonValueKind.String && double.TryParse(value.GetString(), out var parsed))
-			{
-				return parsed;
-			}
-		}
-
-		return null;
+        json = JsonSerializer.Serialize(response, _jsonOptions);
+		await File.WriteAllTextAsync(VerifyResponse, json).ConfigureAwait(false);
 	}
 
 	private static double Haversine(double latitude1, double longitude1, double latitude2, double longitude2)
@@ -548,12 +446,6 @@ public class FindHimTask
 	private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180.0;
 }
 
-public record PowerPlantDefinition(
-	[property: JsonPropertyName("name")] string Name,
-	[property: JsonPropertyName("code")] string Code,
-	[property: JsonPropertyName("latitude")] double? Latitude,
-	[property: JsonPropertyName("longitude")] double? Longitude);
-
 public record MatchedPowerPlant(
 	[property: JsonPropertyName("powerPlantName")] string PowerPlantName,
 	[property: JsonPropertyName("powerPlantCode")] string PowerPlantCode,
@@ -569,17 +461,6 @@ public record FindHimAgentResult(
 	[property: JsonPropertyName("distanceKm")] double DistanceKm,
 	[property: JsonPropertyName("reasoning")] string Reasoning);
 
-public record VerifyRequest(
-	[property: JsonPropertyName("apikey")] string ApiKey,
-	[property: JsonPropertyName("task")] string Task,
-	[property: JsonPropertyName("answer")] VerifyAnswer Answer);
-
-public record VerifyAnswer(
-	[property: JsonPropertyName("name")] string Name,
-	[property: JsonPropertyName("surname")] string Surname,
-	[property: JsonPropertyName("accessLevel")] int AccessLevel,
-	[property: JsonPropertyName("powerPlant")] string PowerPlant);
-
 public record PersonLocationArgs(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("surname")] string Surname);
@@ -588,10 +469,6 @@ public record AccessLevelArgs(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("surname")] string Surname,
 	[property: JsonPropertyName("birthYear")] int BirthYear);
-
-public record CoordinateArgs(
-	[property: JsonPropertyName("latitude")] double Latitude,
-	[property: JsonPropertyName("longitude")] double Longitude);
 
 public record PowerPlantAiMatch(
 	[property: JsonPropertyName("powerPlantName")] string PowerPlantName,
