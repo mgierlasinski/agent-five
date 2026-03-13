@@ -61,9 +61,11 @@ app.MapPost("/proxy", async (
 	}
 
 	var logger = loggerFactory.CreateLogger("ProxyEndpoint");
-	logger.LogInformation("Received proxy request for session {SessionId}: {Message}", request.SessionID, request.Msg);
+	logger.LogInformation("Proxy request for session {SessionId}: {Message}", request.SessionID, request.Msg);
 
 	var response = await assistantService.ProcessAsync(request, cancellationToken).ConfigureAwait(false);
+    logger.LogInformation("Proxy response for session {SessionId}: {Response}", request.SessionID, response.Msg);
+
 	return Results.Ok(response);
 });
 

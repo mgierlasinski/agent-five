@@ -188,14 +188,14 @@ public class OpenRouterService : IDisposable
 	private async Task<string> SendRequestAsync(ChatPayload payload, CancellationToken cancellationToken = default)
 	{
 		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-		_logger.LogInformation("Sending request to OpenRouter: {Payload}", json);
+		//_logger.LogInformation("Sending request to OpenRouter: {Payload}", json);
 
 		using var content = new StringContent(json, Encoding.UTF8, "application/json");
 		using var resp = await _httpClient.PostAsync("v1/chat/completions", content, cancellationToken).ConfigureAwait(false);
 		resp.EnsureSuccessStatusCode();
 
 		var respText = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-		_logger.LogInformation("Received response from OpenRouter: {Response}", respText);
+		//_logger.LogInformation("Received response from OpenRouter: {Response}", respText);
 
 		return respText;
 	}

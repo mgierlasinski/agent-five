@@ -1,8 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace AgentFive.Api.Contracts;
 
-public record ProxyRequest(string SessionID, string Msg);
+public record ProxyRequest(
+    [property: JsonPropertyName("sessionID")] string SessionID, 
+    [property: JsonPropertyName("msg")] string Msg);
 
-public record ProxyResponse(string Msg);
+public record ProxyResponse([property: JsonPropertyName("msg")] string Msg);
 
 public static class ProxyRequestValidator
 {

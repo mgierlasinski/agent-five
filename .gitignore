@@ -45,6 +45,7 @@ CodeCoverage/
 *.user
 *.orig
 *.DS_Store
+sessions/
 
 # MSBuild Binary and Structured Log
 *.binlog
