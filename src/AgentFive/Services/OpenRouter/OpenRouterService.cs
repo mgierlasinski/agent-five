@@ -42,6 +42,12 @@ public class OpenRouterService : IDisposable
 		return DeserializeResponse<TResponse>(respText);
 	}
 
+	public async Task<ChatResponse?> SendToolRequestAsync(ChatPayload payload, CancellationToken cancellationToken = default)
+	{
+		var respText = await SendRequestAsync(payload, cancellationToken).ConfigureAwait(false);
+		return JsonSerializer.Deserialize<ChatResponse>(respText, _deserializeOptions);
+	}
+
 	public async Task<TResponse?> RunToolConversationAsync<TResponse>(
 		string systemPrompt,
 		string userPrompt,
@@ -179,16 +185,16 @@ public class OpenRouterService : IDisposable
 		}
 	}
 
-	private async Task<string> SendRequestAsync(ChatPayload payload)
+	private async Task<string> SendRequestAsync(ChatPayload payload, CancellationToken cancellationToken = default)
 	{
 		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 		_logger.LogInformation("Sending request to OpenRouter: {Payload}", json);
 
 		using var content = new StringContent(json, Encoding.UTF8, "application/json");
-		using var resp = await _httpClient.PostAsync("v1/chat/completions", content).ConfigureAwait(false);
+		using var resp = await _httpClient.PostAsync("v1/chat/completions", content, cancellationToken).ConfigureAwait(false);
 		resp.EnsureSuccessStatusCode();
 
-		var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+		var respText = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 		_logger.LogInformation("Received response from OpenRouter: {Response}", respText);
 
 		return respText;
