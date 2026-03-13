@@ -10,12 +10,12 @@ public class OpenRouterService : IDisposable
 	private const string DefaultModel = "gpt-4o-mini";
 
 	private readonly HttpClient _httpClient;
-	private readonly AppSettings _settings;
+	private readonly OpenRouterSettings _settings;
     private readonly ILogger _logger;
 	private readonly JsonSerializerOptions _deserializeOptions = new() { PropertyNameCaseInsensitive = true };
     private bool _disposed;
 
-	public OpenRouterService(AppSettings settings, ILogger logger)
+	public OpenRouterService(OpenRouterSettings settings, ILogger logger)
 	{
 		ArgumentException.ThrowIfNullOrEmpty(settings.OpenRouterApiKey, nameof(settings.OpenRouterApiKey));
 		ArgumentException.ThrowIfNullOrEmpty(settings.OpenRouterUrl, nameof(settings.OpenRouterUrl));

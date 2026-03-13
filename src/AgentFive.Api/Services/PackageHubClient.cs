@@ -9,14 +9,14 @@ namespace AgentFive.Api.Services;
 public class PackageHubClient
 {
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly AppSettings _settings;
+    private readonly HubSettings _settings;
     private readonly ILogger<PackageHubClient> _logger;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
-    public PackageHubClient(IHttpClientFactory httpClientFactory, IOptions<AppSettings> options, ILogger<PackageHubClient> logger)
+    public PackageHubClient(IHttpClientFactory httpClientFactory, IOptions<HubSettings> options, ILogger<PackageHubClient> logger)
     {
         _httpClientFactory = httpClientFactory;
         _settings = options.Value;

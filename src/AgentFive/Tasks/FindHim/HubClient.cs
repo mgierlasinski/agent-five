@@ -8,7 +8,7 @@ namespace AgentFive.Tasks.FindHim;
 public class HubClient : IDisposable
 {
 	private readonly HttpClient _httpClient;
-	private readonly AppSettings _settings;
+	private readonly HubSettings _settings;
 	private readonly ILogger _logger;
 	private readonly JsonSerializerOptions _jsonOptions = new()
 	{
@@ -16,7 +16,7 @@ public class HubClient : IDisposable
 	};
 	private bool _disposed;
 
-	public HubClient(AppSettings settings, ILogger logger)
+	public HubClient(HubSettings settings, ILogger logger)
 	{
 		ArgumentException.ThrowIfNullOrEmpty(settings.HubUrl, nameof(settings.HubUrl));
 		ArgumentException.ThrowIfNullOrEmpty(settings.HubApiKey, nameof(settings.HubApiKey));

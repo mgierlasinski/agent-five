@@ -12,15 +12,13 @@ public class PeopleTask
     public const string PeopleTransport = "people_transport.json";
 
 	private DateTime Today => DateTime.Today;
-	private readonly AppSettings? _settings;
-    private readonly ILogger _logger;
+	private readonly ILogger _logger;
     private readonly OpenRouterService? _openRouter;
 
-	public PeopleTask(AppSettings settings, ILogger logger)
+	public PeopleTask(OpenRouterSettings openRouterSettings, ILogger logger)
 	{
-		_settings = settings;
         _logger = logger;
-        _openRouter = new OpenRouterService(_settings, logger);
+        _openRouter = new OpenRouterService(openRouterSettings, logger);
 	}
 
 	public async Task RunAsync()
@@ -82,7 +80,7 @@ public class PeopleTask
 	private async Task<List<TaggedPerson>> TagPeopleWithAIAsync(IEnumerable<Person> people)
 	{
 		if (_openRouter == null)
-			throw new InvalidOperationException("OpenRouterService not initialized. Use PeopleTask(AppSettings) constructor.");
+			throw new InvalidOperationException("OpenRouterService not initialized. Use PeopleTask(HubSettings, OpenRouterSettings, ILogger) constructor.");
 
 		var allowedTags = new[] { "IT", "transport", "edukacja", "medycyna", "praca z ludźmi", "praca z pojazdami", "praca fizyczna" };
 

@@ -3,9 +3,9 @@ using Microsoft.Extensions.Options;
 
 namespace AgentFive.Api.Configuration;
 
-public sealed class AppSettingsValidator : IValidateOptions<AppSettings>
+public sealed class HubSettingsValidator : IValidateOptions<HubSettings>
 {
-    public ValidateOptionsResult Validate(string? name, AppSettings settings)
+    public ValidateOptionsResult Validate(string? name, HubSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
 
@@ -19,16 +19,6 @@ public sealed class AppSettingsValidator : IValidateOptions<AppSettings>
         if (string.IsNullOrWhiteSpace(settings.HubApiKey))
         {
             failures.Add("HubApiKey is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.OpenRouterUrl))
-        {
-            failures.Add("OpenRouterUrl is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.OpenRouterApiKey))
-        {
-            failures.Add("OpenRouterApiKey is required.");
         }
 
         return failures.Count > 0

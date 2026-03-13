@@ -17,7 +17,7 @@ public class ProxyAssistantService : IDisposable
     private readonly SessionStore _sessionStore;
     private readonly PackageHubClient _packageHubClient;
     private readonly OpenRouterService _openRouterService;
-    private readonly AppSettings _settings;
+    private readonly OpenRouterSettings _settings;
     private readonly ILogger<ProxyAssistantService> _logger;
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -29,7 +29,7 @@ public class ProxyAssistantService : IDisposable
     public ProxyAssistantService(
         SessionStore sessionStore,
         PackageHubClient packageHubClient,
-        IOptions<AppSettings> options,
+        IOptions<OpenRouterSettings> options,
         ILogger<ProxyAssistantService> logger)
     {
         _sessionStore = sessionStore;

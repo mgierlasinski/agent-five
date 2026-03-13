@@ -1,9 +1,9 @@
 namespace AgentFive.Configuration;
 
-public class AppSettings
+public class OpenRouterSettings
 {
-    public string HubUrl { get; set; } = null!;
-    public string HubApiKey { get; set; } = null!;
+    public const string SectionName = "OpenRouter";
+
     public string OpenRouterUrl { get; set; } = null!;
     public string OpenRouterApiKey { get; set; } = null!;
     public string OpenRouterModel { get; set; } = null!;

@@ -6,26 +6,21 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Configuration
-	.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-	.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
-	.AddEnvironmentVariables()
-	.AddUserSecrets<Program>(optional: true);
-
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-	options.SerializerOptions.PropertyNamingPolicy = null;
-});
-
 builder.Services
-	.AddOptions<AppSettings>()
-	.Bind(builder.Configuration)
+	.AddOptions<HubSettings>()
+	.Bind(builder.Configuration.GetSection(HubSettings.SectionName))
 	.ValidateOnStart();
 
-builder.Services.AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>();
+builder.Services
+	.AddOptions<OpenRouterSettings>()
+	.Bind(builder.Configuration.GetSection(OpenRouterSettings.SectionName))
+	.ValidateOnStart();
+
+builder.Services.AddSingleton<IValidateOptions<HubSettings>, HubSettingsValidator>();
+builder.Services.AddSingleton<IValidateOptions<OpenRouterSettings>, OpenRouterSettingsValidator>();
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<SessionStore>();

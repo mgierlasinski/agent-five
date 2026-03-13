@@ -14,7 +14,8 @@ public class FindHimTask
     private const string VerifyResponse = "findhim_verify_response.json";
 	private const int MaxAgentIterations = 12;
 
-	private readonly AppSettings _settings;
+	private readonly HubSettings _hubSettings;
+	private readonly OpenRouterSettings _openRouterSettings;
 	private readonly ILogger _logger;
 	private readonly OpenRouterService _openRouter;
 	private readonly HubClient _hubClient;
@@ -25,12 +26,13 @@ public class FindHimTask
 		Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
 	};
 
-	public FindHimTask(AppSettings settings, ILogger logger)
+	public FindHimTask(HubSettings hubSettings, OpenRouterSettings openRouterSettings, ILogger logger)
 	{
-		_settings = settings;
+		_hubSettings = hubSettings;
+		_openRouterSettings = openRouterSettings;
 		_logger = logger;
-		_openRouter = new OpenRouterService(settings, logger);
-		_hubClient = new HubClient(settings, logger);
+		_openRouter = new OpenRouterService(openRouterSettings, logger);
+		_hubClient = new HubClient(hubSettings, logger);
 	}
 
 	public async Task RunAsync()
@@ -47,7 +49,7 @@ public class FindHimTask
 			}
 
 			var payload = new VerifyRequest(
-				_settings.HubApiKey,
+				_hubSettings.HubApiKey,
 				"findhim",
 				new VerifyAnswer(result.Name, result.Surname, result.AccessLevel, result.PowerPlant));
 
@@ -132,7 +134,7 @@ public class FindHimTask
 			tools,
 			toolCall => HandleToolCallAsync(toolCall, suspects, powerPlants),
 			schema,
-			_settings.OpenRouterModel,
+			_openRouterSettings.OpenRouterModel,
 			0.0,
 			MaxAgentIterations).ConfigureAwait(false);
 	}
@@ -346,7 +348,7 @@ public class FindHimTask
 			systemPrompt,
 			userPrompt,
 			schema,
-			_settings.OpenRouterModel,
+			_openRouterSettings.OpenRouterModel,
 			0.0).ConfigureAwait(false);
 
 		if (response == null)
@@ -399,7 +401,7 @@ public class FindHimTask
 			systemPrompt,
 			userPrompt,
 			schema,
-			_settings.OpenRouterModel,
+			_openRouterSettings.OpenRouterModel,
 			0.0).ConfigureAwait(false);
 
 		if (response?.Results == null || response.Results.Count == 0)

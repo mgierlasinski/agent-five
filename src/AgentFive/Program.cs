@@ -9,22 +9,23 @@ var config = new ConfigurationBuilder()
     .AddUserSecrets<Program>()
     .Build();
 
-var settings = config.Get<AppSettings>()!;
+var hubSettings = config.GetSection(HubSettings.SectionName).Get<HubSettings>()!;
+var openRouterSettings = config.GetSection(OpenRouterSettings.SectionName).Get<OpenRouterSettings>()!;
 
 using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
 var logger = factory.CreateLogger<Program>();
 
 var tasks = new Dictionary<string, Func<Task>>
 {
-    ["people"] = async () => await new PeopleTask(settings, logger).RunAsync(),
+    ["people"] = async () => await new PeopleTask(openRouterSettings, logger).RunAsync(),
     ["findhim"] = async () =>
     {
         if (!File.Exists(PeopleTask.PeopleTransport))
         {
             logger.LogInformation("Missing people transport input. Running PeopleTask first.");
-            await new PeopleTask(settings, logger).RunAsync();
+            await new PeopleTask(openRouterSettings, logger).RunAsync();
         }
-        await new FindHimTask(settings, logger).RunAsync();
+        await new FindHimTask(hubSettings, openRouterSettings, logger).RunAsync();
     }
 };
 
