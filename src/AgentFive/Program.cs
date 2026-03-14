@@ -5,16 +5,11 @@ using AgentFive.Tasks.SendIt;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-var config = new ConfigurationBuilder()
-    .AddJsonFile(ConfigHelper.GetPath("appsettings.json"), optional: true, reloadOnChange: true)
-    .AddUserSecrets<Program>()
-    .Build();
+var config = AppStartup.BuildConfiguration();
+var logger = AppStartup.CreateLogger();
 
 var hubSettings = config.GetSection(HubSettings.SectionName).Get<HubSettings>()!;
 var openRouterSettings = config.GetSection(OpenRouterSettings.SectionName).Get<OpenRouterSettings>()!;
-
-using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
-var logger = factory.CreateLogger<Program>();
 
 var tasks = new Dictionary<string, Func<Task>>
 {
@@ -31,4 +26,5 @@ var tasks = new Dictionary<string, Func<Task>>
     ["sendit"] = async () => await new SendItTask(hubSettings, openRouterSettings, logger).RunAsync()
 };
 
-await tasks["sendit"].Invoke();
+logger.LogInformation("Starting AgentFive. Available tasks: {Tasks}", string.Join(", ", tasks.Keys));
+//await tasks["sendit"].Invoke();
