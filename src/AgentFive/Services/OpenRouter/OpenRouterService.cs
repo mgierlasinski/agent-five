@@ -29,7 +29,15 @@ public class OpenRouterService : IDisposable
 
 	public async Task<ChatResponse?> GetResponseAsync(ChatPayload payload, CancellationToken cancellationToken = default)
 	{
-		var respText = await SendRequestAsync(payload, cancellationToken).ConfigureAwait(false);
+		LogChatPayloadCompact(payload);
+		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+
+		using var content = new StringContent(json, Encoding.UTF8, "application/json");
+		using var resp = await _httpClient.PostAsync("v1/chat/completions", content, cancellationToken).ConfigureAwait(false);
+		resp.EnsureSuccessStatusCode();
+
+		var respText = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+		
 		return JsonSerializer.Deserialize<ChatResponse>(respText, _deserializeOptions);
 	}
 
@@ -41,9 +49,9 @@ public class OpenRouterService : IDisposable
 		double temperature = 0.0) where TResponse : class
 	{
 		var payload = BuildChatPayload(model, systemPrompt, userPrompt, temperature, jsonSchema);
-		var respText = await SendRequestAsync(payload).ConfigureAwait(false);
+		var response = await GetResponseAsync(payload).ConfigureAwait(false);
 
-		return DeserializeResponse<TResponse>(respText);
+		return ExtractStructuredResponse<TResponse>(response);
 	}
 
 	public async Task<TResponse?> RunToolConversationAsync<TResponse>(
@@ -77,8 +85,7 @@ public class OpenRouterService : IDisposable
 				tools.ToArray(),
 				"auto");
 
-			var respText = await SendRequestAsync(payload).ConfigureAwait(false);
-			var response = JsonSerializer.Deserialize<ChatResponse>(respText, _deserializeOptions);
+			var response = await GetResponseAsync(payload).ConfigureAwait(false);
 			var assistantMessage = response?.Choices?.FirstOrDefault()?.Message;
 
 			if (assistantMessage == null)
@@ -116,12 +123,12 @@ public class OpenRouterService : IDisposable
 		return new ChatPayload(model, messages, temperature, responseFormat);
 	}
 
-	private TResponse? DeserializeResponse<TResponse>(string respText) where TResponse : class
+	private TResponse? ExtractStructuredResponse<TResponse>(ChatResponse? response) where TResponse : class
 	{
 		try
 		{
-			var response = JsonSerializer.Deserialize<ChatResponse>(respText, _deserializeOptions);
 			var assistantContent = response?.Choices?.FirstOrDefault()?.Message?.Content ?? response?.Choices?.FirstOrDefault()?.Content;
+
 			if (!string.IsNullOrWhiteSpace(assistantContent))
 			{
 				var parsed = DeserializeAssistantContent<TResponse>(assistantContent);
@@ -134,19 +141,6 @@ public class OpenRouterService : IDisposable
 		catch (JsonException ex)
 		{
 			_logger.LogError(ex, "Failed to parse OpenRouter response envelope");
-		}
-
-		try
-		{
-			var direct = JsonSerializer.Deserialize<TResponse>(respText, _deserializeOptions);
-			if (direct != null)
-			{
-				return direct;
-			}
-		}
-		catch (JsonException ex)
-		{
-			_logger.LogError(ex, "Failed to deserialize OpenRouter response directly into target type");
 		}
 
 		return default;
@@ -174,6 +168,7 @@ public class OpenRouterService : IDisposable
 
 		try
 		{
+			_logger.LogInformation("Deserializing assistant content into target type {Type}: {Content}", typeof(TResponse).Name, normalizedContent);
 			return JsonSerializer.Deserialize<TResponse>(normalizedContent, _deserializeOptions);
 		}
 		catch (JsonException ex)
@@ -183,19 +178,31 @@ public class OpenRouterService : IDisposable
 		}
 	}
 
-	private async Task<string> SendRequestAsync(ChatPayload payload, CancellationToken cancellationToken = default)
+	private void LogChatPayloadCompact(ChatPayload payload)
 	{
-		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-		//_logger.LogInformation("Sending request to OpenRouter: {Payload}", json);
+		try
+		{
+			var compact = new
+			{
+				model = payload.Model,
+				temperature = payload.Temperature,
+				messages = payload.Messages?.Select(m => new
+				{
+					role = m.Role,
+					snippet = string.IsNullOrEmpty(m.Content) ? string.Empty : (m.Content.Length > 120 ? m.Content[..120] + "…" : m.Content)
+				}).ToArray(),
+				tools = payload.Tools?.Select(t => t.Function?.Name).ToArray(),
+				tool_choice = payload.ToolChoice
+			};
 
-		using var content = new StringContent(json, Encoding.UTF8, "application/json");
-		using var resp = await _httpClient.PostAsync("v1/chat/completions", content, cancellationToken).ConfigureAwait(false);
-		resp.EnsureSuccessStatusCode();
-
-		var respText = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-		//_logger.LogInformation("Received response from OpenRouter: {Response}", respText);
-
-		return respText;
+			var opts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+			var compactJson = JsonSerializer.Serialize(compact, opts);
+			_logger.LogInformation("OpenRouter payload (compact): {Payload}", compactJson);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogDebug(ex, "Failed to format OpenRouter payload for logging");
+		}
 	}
 
 	public void Dispose()
