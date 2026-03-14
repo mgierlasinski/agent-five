@@ -1,6 +1,7 @@
 ﻿using AgentFive.Configuration;
 using AgentFive.Tasks.FindHim;
 using AgentFive.Tasks.People;
+using AgentFive.Tasks.SendIt;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -26,7 +27,8 @@ var tasks = new Dictionary<string, Func<Task>>
             await new PeopleTask(openRouterSettings, logger).RunAsync();
         }
         await new FindHimTask(hubSettings, openRouterSettings, logger).RunAsync();
-    }
+    },
+    ["sendit"] = async () => await new SendItTask().RunAsync()
 };
 
-await tasks["findhim"].Invoke();
+await tasks["sendit"].Invoke();
