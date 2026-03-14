@@ -7,8 +7,6 @@ namespace AgentFive.Services.OpenRouter;
 
 public class OpenRouterService : IDisposable
 {
-	private const string DefaultModel = "gpt-4o-mini";
-
 	private readonly HttpClient _httpClient;
 	private readonly OpenRouterSettings _settings;
     private readonly ILogger _logger;
@@ -29,11 +27,17 @@ public class OpenRouterService : IDisposable
 		_httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _settings.OpenRouterApiKey);
 	}
 
+	public async Task<ChatResponse?> GetResponseAsync(ChatPayload payload, CancellationToken cancellationToken = default)
+	{
+		var respText = await SendRequestAsync(payload, cancellationToken).ConfigureAwait(false);
+		return JsonSerializer.Deserialize<ChatResponse>(respText, _deserializeOptions);
+	}
+
 	public async Task<TResponse?> GetStructuredResponseAsync<TResponse>(
 		string systemPrompt, 
 		string userPrompt, 
-		JsonSchemaObject? jsonSchema = null, 
-		string model = DefaultModel, 
+		string model,
+		JsonSchemaObject? jsonSchema = null,
 		double temperature = 0.0) where TResponse : class
 	{
 		var payload = BuildChatPayload(model, systemPrompt, userPrompt, temperature, jsonSchema);
@@ -42,19 +46,13 @@ public class OpenRouterService : IDisposable
 		return DeserializeResponse<TResponse>(respText);
 	}
 
-	public async Task<ChatResponse?> SendToolRequestAsync(ChatPayload payload, CancellationToken cancellationToken = default)
-	{
-		var respText = await SendRequestAsync(payload, cancellationToken).ConfigureAwait(false);
-		return JsonSerializer.Deserialize<ChatResponse>(respText, _deserializeOptions);
-	}
-
 	public async Task<TResponse?> RunToolConversationAsync<TResponse>(
 		string systemPrompt,
 		string userPrompt,
 		IReadOnlyCollection<ChatToolDefinition> tools,
 		Func<ChatToolCall, Task<string>> toolHandler,
+		string model,
 		JsonSchemaObject? jsonSchema = null,
-		string model = DefaultModel,
 		double temperature = 0.0,
 		int maxIterations = 10) where TResponse : class
 	{

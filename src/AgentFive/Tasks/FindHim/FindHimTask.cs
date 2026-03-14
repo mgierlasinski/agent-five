@@ -133,8 +133,8 @@ public class FindHimTask
 			userPrompt,
 			tools,
 			toolCall => HandleToolCallAsync(toolCall, suspects, powerPlants),
+			OpenRouterModels.Gpt41Mini,
 			schema,
-			_openRouterSettings.OpenRouterModel,
 			0.0,
 			MaxAgentIterations).ConfigureAwait(false);
 	}
@@ -347,8 +347,8 @@ public class FindHimTask
 		var response = await _openRouter.GetStructuredResponseAsync<PowerPlantAiMatch>(
 			systemPrompt,
 			userPrompt,
+			OpenRouterModels.Gpt41Mini,
 			schema,
-			_openRouterSettings.OpenRouterModel,
 			0.0).ConfigureAwait(false);
 
 		if (response == null)
@@ -400,8 +400,8 @@ public class FindHimTask
 		var response = await _openRouter.GetStructuredResponseAsync<PowerPlantCoordinateResponse>(
 			systemPrompt,
 			userPrompt,
+			OpenRouterModels.Gpt41Mini,
 			schema,
-			_openRouterSettings.OpenRouterModel,
 			0.0).ConfigureAwait(false);
 
 		if (response?.Results == null || response.Results.Count == 0)

@@ -137,7 +137,7 @@ public class PeopleTask
 			}
 		);
 
-		var response = await _openRouter.GetStructuredResponseAsync<IndexTagResponse>(systemPrompt, userContent, jsonSchema).ConfigureAwait(false);
+		var response = await _openRouter.GetStructuredResponseAsync<IndexTagResponse>(systemPrompt, userContent, OpenRouterModels.Gpt41Mini, jsonSchema).ConfigureAwait(false);
 
 		var result = new List<TaggedPerson>();
 		if (response?.Results == null || response.Results.Count == 0)

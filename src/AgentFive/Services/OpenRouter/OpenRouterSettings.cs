@@ -6,5 +6,4 @@ public class OpenRouterSettings
 
     public string OpenRouterUrl { get; set; } = null!;
     public string OpenRouterApiKey { get; set; } = null!;
-    public string OpenRouterModel { get; set; } = null!;
 }

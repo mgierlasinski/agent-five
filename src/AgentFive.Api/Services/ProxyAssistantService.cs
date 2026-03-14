@@ -54,7 +54,7 @@ public class ProxyAssistantService : IDisposable
                     for (var iteration = 0; iteration < MaxIterations; iteration++)
                     {
                         var payload = new ChatPayload(
-                            _settings.OpenRouterModel,
+                            OpenRouterModels.Gpt5Mini,
                             messages.ToArray(),
                             AssistantTemperature,
                             null,
@@ -90,7 +90,7 @@ public class ProxyAssistantService : IDisposable
 
     private async Task<Message> SendConversationAsync(ChatPayload payload, CancellationToken cancellationToken)
     {
-        var response = await _openRouterService.SendToolRequestAsync(payload, cancellationToken).ConfigureAwait(false);
+        var response = await _openRouterService.GetResponseAsync(payload, cancellationToken).ConfigureAwait(false);
         var assistantMessage = response?.Choices?.FirstOrDefault()?.Message;
 
         if (assistantMessage is null)
