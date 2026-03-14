@@ -110,6 +110,84 @@ public class OpenRouterService : IDisposable
 		throw new InvalidOperationException($"Tool conversation exceeded the maximum number of iterations: {maxIterations}.");
 	}
 
+	public async Task<string?> AnalyzeImageAsync(
+		string prompt,
+		string imageBase64,
+		string mimeType,
+		string model,
+		double temperature = 0.0,
+		CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+		ArgumentException.ThrowIfNullOrWhiteSpace(imageBase64);
+		ArgumentException.ThrowIfNullOrWhiteSpace(mimeType);
+		ArgumentException.ThrowIfNullOrWhiteSpace(model);
+
+		var payload = new
+		{
+			model,
+			temperature,
+			messages = new object[]
+			{
+				new
+				{
+					role = "user",
+					content = new object[]
+					{
+						new { type = "text", text = prompt },
+						new
+						{
+							type = "image_url",
+							image_url = new
+							{
+								url = $"data:{mimeType};base64,{imageBase64}"
+							}
+						}
+					}
+				}
+			}
+		};
+
+		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+		using var content = new StringContent(json, Encoding.UTF8, "application/json");
+		using var response = await _httpClient.PostAsync("v1/chat/completions", content, cancellationToken).ConfigureAwait(false);
+		var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+		response.EnsureSuccessStatusCode();
+
+		using var document = JsonDocument.Parse(responseText);
+		var root = document.RootElement;
+		if (!root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
+		{
+			return null;
+		}
+
+		var firstChoice = choices[0];
+		if (firstChoice.TryGetProperty("message", out var message) && message.TryGetProperty("content", out var contentElement))
+		{
+			if (contentElement.ValueKind == JsonValueKind.String)
+			{
+				return contentElement.GetString();
+			}
+
+			if (contentElement.ValueKind == JsonValueKind.Array)
+			{
+				var builder = new StringBuilder();
+				foreach (var item in contentElement.EnumerateArray())
+				{
+					if (item.TryGetProperty("text", out var textElement))
+					{
+						builder.Append(textElement.GetString());
+					}
+				}
+				return builder.ToString();
+			}
+		}
+
+		return firstChoice.TryGetProperty("content", out var choiceContent) && choiceContent.ValueKind == JsonValueKind.String
+			? choiceContent.GetString()
+			: null;
+	}
+
 	private ChatPayload BuildChatPayload(string model, string systemPrompt, string userPrompt, double temperature = 0.0, JsonSchemaObject? jsonSchema = null)
 	{
 		var messages = new[]

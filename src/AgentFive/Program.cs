@@ -28,7 +28,7 @@ var tasks = new Dictionary<string, Func<Task>>
         }
         await new FindHimTask(hubSettings, openRouterSettings, logger).RunAsync();
     },
-    ["sendit"] = async () => await new SendItTask().RunAsync()
+    ["sendit"] = async () => await new SendItTask(hubSettings, openRouterSettings, logger).RunAsync()
 };
 
 await tasks["sendit"].Invoke();
