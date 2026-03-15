@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using AgentFive.Services.OpenRouter;
 using AgentFive.Tasks.SendIt.Models;
+using AgentFive.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace AgentFive.Tasks.SendIt.Tools;
@@ -39,7 +40,7 @@ public class SpkToolHandler
 		_shipment = shipment;
 		_logger = logger;
 		_httpClient = new HttpClient();
-		_cacheDirectory = Path.Combine(AppContext.BaseDirectory, "Tasks", "SendIt", "Cache");
+		_cacheDirectory = Path.Combine(FileHelper.BasePath, "Artifacts", "sendit", "Cache");
 		Directory.CreateDirectory(_cacheDirectory);
 	}
 

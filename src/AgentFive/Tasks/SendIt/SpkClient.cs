@@ -2,15 +2,13 @@ using System.Text;
 using System.Text.Json;
 using AgentFive.Configuration;
 using AgentFive.Tasks.SendIt.Models;
+using AgentFive.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace AgentFive.Tasks.SendIt;
 
 public class SpkClient : IDisposable
 {
-	private const string VerifyRequestFile = "Artifacts/sendit_verify_request.json";
-	private const string VerifyResponseFile = "Artifacts/sendit_verify_response.json";
-
 	private readonly HttpClient _httpClient;
 	private readonly HubSettings _settings;
 	private readonly ILogger _logger;
@@ -35,13 +33,13 @@ public class SpkClient : IDisposable
 
 		var payload = new VerificationRequest(_settings.HubApiKey, "sendit", new VerificationAnswer(declaration));
 		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true });
-		await File.WriteAllTextAsync(VerifyRequestFile, json, cancellationToken).ConfigureAwait(false);
+		await FileHelper.WriteArtifactAsync("sendit", "verify_request.json", json).ConfigureAwait(false);
 
 		_logger.LogInformation("Sending sendit verification payload to hub.");
 		using var content = new StringContent(json, Encoding.UTF8, "application/json");
 		using var response = await _httpClient.PostAsync("verify", content, cancellationToken).ConfigureAwait(false);
 		var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-		await File.WriteAllTextAsync(VerifyResponseFile, responseBody, cancellationToken).ConfigureAwait(false);
+		await FileHelper.WriteArtifactAsync("sendit", "verify_response.json", responseBody).ConfigureAwait(false);
 
 		if (!response.IsSuccessStatusCode)
 		{

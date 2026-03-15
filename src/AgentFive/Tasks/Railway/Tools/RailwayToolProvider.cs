@@ -8,68 +8,10 @@ public static class RailwayToolProvider
     {
         ArgumentNullException.ThrowIfNull(helpDocument);
 
-        var actionNames = helpDocument.Actions
-            .Select(action => action.Action)
-            .Where(action => !string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
         var setStatusValues = helpDocument.Actions
             .FirstOrDefault(action => string.Equals(action.Action, "setstatus", StringComparison.OrdinalIgnoreCase))?
             .AllowedValues
             .ToArray() ?? Array.Empty<string>();
-
-        var executeActionSchema = new
-        {
-            oneOf = new object[]
-            {
-                new
-                {
-                    type = "object",
-                    properties = new
-                    {
-                        action = new { @const = "getstatus" },
-                        route = new { type = "string", pattern = "^[A-Za-z]-[0-9]{1,2}$" }
-                    },
-                    required = new[] { "action", "route" },
-                    additionalProperties = false
-                },
-                new
-                {
-                    type = "object",
-                    properties = new
-                    {
-                        action = new { @const = "reconfigure" },
-                        route = new { type = "string", pattern = "^[A-Za-z]-[0-9]{1,2}$" }
-                    },
-                    required = new[] { "action", "route" },
-                    additionalProperties = false
-                },
-                new
-                {
-                    type = "object",
-                    properties = new
-                    {
-                        action = new { @const = "save" },
-                        route = new { type = "string", pattern = "^[A-Za-z]-[0-9]{1,2}$" }
-                    },
-                    required = new[] { "action", "route" },
-                    additionalProperties = false
-                },
-                new
-                {
-                    type = "object",
-                    properties = new
-                    {
-                        action = new { @const = "setstatus" },
-                        route = new { type = "string", pattern = "^[A-Za-z]-[0-9]{1,2}$" },
-                        value = new { type = "string", @enum = setStatusValues }
-                    },
-                    required = new[] { "action", "route", "value" },
-                    additionalProperties = false
-                }
-            }
-        };
 
         return new List<ChatToolDefinition>
         {
@@ -87,9 +29,64 @@ public static class RailwayToolProvider
             new(
                 "function",
                 new ChatFunctionDefinition(
-                    "execute_documented_action",
-                    $"Executes one documented railway API action through the hub client. Use one of: {string.Join(", ", actionNames)}. Pass route and value as separate JSON fields, never inside the action string.",
-                    executeActionSchema)),
+                    "get_route_status",
+                    "Calls the documented getstatus action for a route. Use this to inspect the current route mode and status.",
+                    new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            route = new { type = "string", description = "Route identifier like X-01." }
+                        },
+                        required = new[] { "route" },
+                        additionalProperties = false
+                    })),
+            new(
+                "function",
+                new ChatFunctionDefinition(
+                    "enable_reconfigure_mode",
+                    "Calls the documented reconfigure action for a route. Use this before changing route status.",
+                    new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            route = new { type = "string", description = "Route identifier like X-01." }
+                        },
+                        required = new[] { "route" },
+                        additionalProperties = false
+                    })),
+            new(
+                "function",
+                new ChatFunctionDefinition(
+                    "set_route_status",
+                    "Calls the documented setstatus action for a route while in reconfigure mode. Use RTOPEN to activate the route unless the hub explicitly instructs a different value.",
+                    new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            route = new { type = "string", description = "Route identifier like X-01." },
+                            value = new { type = "string", description = $"One of: {string.Join(", ", setStatusValues)}." }
+                        },
+                        required = new[] { "route", "value" },
+                        additionalProperties = false
+                    })),
+            new(
+                "function",
+                new ChatFunctionDefinition(
+                    "save_route_configuration",
+                    "Calls the documented save action for a route to persist the reconfiguration and exit reconfigure mode.",
+                    new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            route = new { type = "string", description = "Route identifier like X-01." }
+                        },
+                        required = new[] { "route" },
+                        additionalProperties = false
+                    })),
             new(
                 "function",
                 new ChatFunctionDefinition(

@@ -3,13 +3,13 @@ using AgentFive.Configuration;
 using AgentFive.Services.OpenRouter;
 using AgentFive.Tasks.SendIt.Models;
 using AgentFive.Tasks.SendIt.Tools;
+using AgentFive.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace AgentFive.Tasks.SendIt;
 
 public class SendItTask
 {
-    private const string DeclarationOutput = "Artifacts/sendit_declaration.txt";
     private const int MaxAgentIterations = 12;
 
     private readonly ILogger _logger;
@@ -54,7 +54,7 @@ public class SendItTask
                 throw new InvalidOperationException("SendIt agent did not return a final result.");
             }
 
-            await File.WriteAllTextAsync(DeclarationOutput, result.Declaration).ConfigureAwait(false);
+            await FileHelper.WriteArtifactAsync("sendit", "declaration.txt", result.Declaration).ConfigureAwait(false);
             _logger.LogInformation(
                 "SendIt completed. Submitted={Submitted}, Category={Category}, RouteCode={RouteCode}, AmountDuePp={AmountDuePp}, AdditionalWagons={AdditionalWagons}",
                 result.Submitted,

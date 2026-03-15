@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using AgentFive.Services.OpenRouter;
 using Microsoft.Extensions.Logging;
 
@@ -6,6 +7,8 @@ namespace AgentFive.Tasks.Railway.Tools;
 
 public sealed class RailwayToolHandler
 {
+    private static readonly Regex RouteRegex = new("^[A-Za-z]-[0-9]{1,2}$", RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     private readonly RailwayHubClient _hubClient;
     private readonly RailwayExecutionTranscript _transcript;
     private readonly RailwayHubResponse _cachedHelpResponse;
@@ -41,7 +44,10 @@ public sealed class RailwayToolHandler
             return toolCall.Function.Name switch
             {
                 "get_cached_help" => Serialize(BuildCachedHelpResult()),
-                "execute_documented_action" => await HandleExecuteDocumentedActionAsync(toolCall.Function.Arguments).ConfigureAwait(false),
+                "get_route_status" => await HandleRouteOnlyActionAsync(toolCall.Function.Arguments, "getstatus").ConfigureAwait(false),
+                "enable_reconfigure_mode" => await HandleRouteOnlyActionAsync(toolCall.Function.Arguments, "reconfigure").ConfigureAwait(false),
+                "set_route_status" => await HandleSetRouteStatusAsync(toolCall.Function.Arguments).ConfigureAwait(false),
+                "save_route_configuration" => await HandleRouteOnlyActionAsync(toolCall.Function.Arguments, "save").ConfigureAwait(false),
                 "get_execution_history" => Serialize(BuildExecutionHistory()),
                 "finish_with_result" => HandleFinish(toolCall.Function.Arguments),
                 _ => Serialize(new { error = $"Unknown railway tool: {toolCall.Function.Name}" })
@@ -54,17 +60,28 @@ public sealed class RailwayToolHandler
         }
     }
 
-    private async Task<string> HandleExecuteDocumentedActionAsync(string argumentsJson)
+    private async Task<string> HandleRouteOnlyActionAsync(string argumentsJson, string action)
     {
-        var args = JsonSerializer.Deserialize<ExecuteDocumentedActionArgs>(argumentsJson, _jsonOptions)
-            ?? throw new InvalidOperationException("Unable to parse execute_documented_action arguments.");
+        var args = JsonSerializer.Deserialize<RouteArgs>(argumentsJson, _jsonOptions)
+            ?? throw new InvalidOperationException($"Unable to parse {action} arguments.");
 
-        if (string.IsNullOrWhiteSpace(args.Action))
-        {
-            throw new InvalidOperationException("execute_documented_action requires a concrete action name.");
-        }
+        var route = NormalizeAndValidateRoute(args.Route);
+        return await ExecuteDocumentedActionAsync(action, route, null).ConfigureAwait(false);
+    }
 
-        if (string.Equals(args.Action, "help", StringComparison.OrdinalIgnoreCase))
+    private async Task<string> HandleSetRouteStatusAsync(string argumentsJson)
+    {
+        var args = JsonSerializer.Deserialize<SetRouteStatusArgs>(argumentsJson, _jsonOptions)
+            ?? throw new InvalidOperationException("Unable to parse set_route_status arguments.");
+
+        var route = NormalizeAndValidateRoute(args.Route);
+        var value = NormalizeAndValidateStatusValue(args.Value);
+        return await ExecuteDocumentedActionAsync("setstatus", route, value).ConfigureAwait(false);
+    }
+
+    private async Task<string> ExecuteDocumentedActionAsync(string action, string route, string? value)
+    {
+        if (string.Equals(action, "help", StringComparison.OrdinalIgnoreCase))
         {
             return Serialize(new
             {
@@ -74,20 +91,14 @@ public sealed class RailwayToolHandler
             });
         }
 
-        var normalizedAction = args.Action.Trim();
-        if (normalizedAction.Contains(' ') || normalizedAction.Contains('='))
-        {
-            throw new InvalidOperationException("Action must be a bare action name like getstatus, reconfigure, setstatus, or save. Pass route and value as separate fields.");
-        }
-
-        var actionDefinition = _helpDocument.Actions.FirstOrDefault(action => string.Equals(action.Action, normalizedAction, StringComparison.OrdinalIgnoreCase));
+        var actionDefinition = _helpDocument.Actions.FirstOrDefault(candidate => string.Equals(candidate.Action, action, StringComparison.OrdinalIgnoreCase));
         if (actionDefinition == null)
         {
-            throw new InvalidOperationException($"Unknown documented action: {normalizedAction}");
+            throw new InvalidOperationException($"Unknown documented action: {action}");
         }
 
-        var parameters = BuildParameters(actionDefinition, args);
-        var response = await _hubClient.ExecuteActionAsync(normalizedAction, parameters).ConfigureAwait(false);
+        var parameters = BuildParameters(actionDefinition, route, value);
+        var response = await _hubClient.ExecuteActionAsync(action, parameters).ConfigureAwait(false);
         _transcript.Actions.Add(RailwayActionAttempt.FromResponse(response));
         _transcript.TotalHttpCalls++;
         _transcript.TotalRetries += response.RetryCount;
@@ -167,7 +178,7 @@ public sealed class RailwayToolHandler
         };
     }
 
-    private static Dictionary<string, object?> BuildParameters(RailwayHelpActionDefinition actionDefinition, ExecuteDocumentedActionArgs args)
+    private Dictionary<string, object?> BuildParameters(RailwayHelpActionDefinition actionDefinition, string route, string? value)
     {
         var parameters = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
@@ -175,42 +186,63 @@ public sealed class RailwayToolHandler
         {
             if (string.Equals(required, "route", StringComparison.OrdinalIgnoreCase))
             {
-                if (string.IsNullOrWhiteSpace(args.Route))
-                {
-                    throw new InvalidOperationException($"Action {actionDefinition.Action} requires route.");
-                }
-
-                parameters["route"] = args.Route;
+                parameters["route"] = route;
                 continue;
             }
 
             if (string.Equals(required, "value", StringComparison.OrdinalIgnoreCase))
             {
-                if (string.IsNullOrWhiteSpace(args.Value))
+                if (string.IsNullOrWhiteSpace(value))
                 {
                     throw new InvalidOperationException($"Action {actionDefinition.Action} requires value.");
                 }
 
-                if (actionDefinition.AllowedValues.Count > 0 && !actionDefinition.AllowedValues.Contains(args.Value, StringComparer.OrdinalIgnoreCase))
+                if (actionDefinition.AllowedValues.Count > 0 && !actionDefinition.AllowedValues.Contains(value, StringComparer.OrdinalIgnoreCase))
                 {
                     throw new InvalidOperationException($"Action {actionDefinition.Action} requires one of: {string.Join(", ", actionDefinition.AllowedValues)}.");
                 }
 
-                parameters["value"] = args.Value;
+                parameters["value"] = value;
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(args.Route) && !parameters.ContainsKey("route"))
-        {
-            parameters["route"] = args.Route;
-        }
-
-        if (!string.IsNullOrWhiteSpace(args.Value) && !parameters.ContainsKey("value"))
-        {
-            parameters["value"] = args.Value;
-        }
-
         return parameters;
+    }
+
+    private static string NormalizeAndValidateRoute(string? route)
+    {
+        if (string.IsNullOrWhiteSpace(route))
+        {
+            throw new InvalidOperationException("The route argument is required.");
+        }
+
+        var normalizedRoute = route.Trim();
+        if (!RouteRegex.IsMatch(normalizedRoute))
+        {
+            throw new InvalidOperationException("Route must match the documented format [a-z]-[0-9]{1,2}, for example X-01.");
+        }
+
+        return normalizedRoute;
+    }
+
+    private string NormalizeAndValidateStatusValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException("The value argument is required for set_route_status.");
+        }
+
+        var normalizedValue = value.Trim().ToUpperInvariant();
+        var allowedValues = _helpDocument.Actions
+            .FirstOrDefault(action => string.Equals(action.Action, "setstatus", StringComparison.OrdinalIgnoreCase))?
+            .AllowedValues ?? new List<string>();
+
+        if (allowedValues.Count > 0 && !allowedValues.Contains(normalizedValue, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Value must be one of: {string.Join(", ", allowedValues)}.");
+        }
+
+        return normalizedValue;
     }
 
     private static object BuildHubResponseView(RailwayHubResponse response)
@@ -244,9 +276,13 @@ public sealed class RailwayToolHandler
         return JsonSerializer.Serialize(value, _jsonOptions);
     }
 
-    private sealed class ExecuteDocumentedActionArgs
+    private sealed class RouteArgs
     {
-        public string Action { get; init; } = string.Empty;
+        public string? Route { get; init; }
+    }
+
+    private sealed class SetRouteStatusArgs
+    {
         public string? Route { get; init; }
         public string? Value { get; init; }
     }

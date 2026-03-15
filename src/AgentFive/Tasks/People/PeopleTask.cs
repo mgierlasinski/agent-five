@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AgentFive.Configuration;
 using AgentFive.Services.OpenRouter;
+using AgentFive.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace AgentFive.Tasks.People;
@@ -8,8 +9,6 @@ namespace AgentFive.Tasks.People;
 public class PeopleTask
 {
 	public const string PeopleCsv = "Tasks/People/people.csv";
-    public const string PeopleTagged = "Artifacts/people_tagged.json";
-    public const string PeopleTransport = "Artifacts/people_transport.json";
 
 	private DateTime Today => DateTime.Today;
 	private readonly ILogger _logger;
@@ -33,11 +32,11 @@ public class PeopleTask
 			};
 
 			var tagged = await TagPeopleWithAIAsync(people);
-			File.WriteAllText(PeopleTagged, JsonSerializer.Serialize(tagged, opts));
+			await FileHelper.WriteArtifactAsync("people", "people_tagged.json", JsonSerializer.Serialize(tagged, opts));
 
 			var transportOnly = tagged.Where(x => x.Tags.Contains("transport")).ToList();
 			var transportJson = JsonSerializer.Serialize(transportOnly, opts);
-			File.WriteAllText(PeopleTransport, transportJson);
+			await FileHelper.WriteArtifactAsync("people", "people_transport.json", transportJson);
 			
 			_logger.LogInformation("People tagged with transport: {People}", transportJson);
 		}
@@ -137,7 +136,12 @@ public class PeopleTask
 			}
 		);
 
-		var response = await _openRouter.GetStructuredResponseAsync<IndexTagResponse>(systemPrompt, userContent, OpenRouterModels.Gpt41Mini, jsonSchema).ConfigureAwait(false);
+		var response = await _openRouter.GetStructuredResponseAsync<IndexTagResponse>(
+			systemPrompt, 
+			userContent, 
+			OpenRouterModels.Gpt4oMini, 
+			jsonSchema)
+			.ConfigureAwait(false);
 
 		var result = new List<TaggedPerson>();
 		if (response?.Results == null || response.Results.Count == 0)

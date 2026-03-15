@@ -2,6 +2,7 @@ using System.Text.Json;
 using AgentFive.Configuration;
 using AgentFive.Services.OpenRouter;
 using AgentFive.Tasks.Railway.Tools;
+using AgentFive.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace AgentFive.Tasks.Railway;
@@ -27,7 +28,7 @@ public class RailwayTask
         ValidateSettings();
 
         var runId = $"{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}";
-        var artifactDirectory = Path.Combine(Directory.GetCurrentDirectory(), "Artifacts", "railway", runId);
+        var artifactDirectory = Path.Combine(FileHelper.BasePath, "Artifacts", "railway", runId);
         Directory.CreateDirectory(artifactDirectory);
 
         var transcript = new RailwayExecutionTranscript
@@ -119,6 +120,14 @@ public class RailwayTask
             if (agentResult == null)
             {
                 _logger.LogWarning("Railway agent returned no final result. Falling back to deterministic protocol execution.");
+                agentResult = await RunDeterministicFallbackAsync(hubClient, transcript).ConfigureAwait(false);
+            }
+
+            if (string.IsNullOrWhiteSpace(agentResult.FinalFlag)
+                && string.IsNullOrWhiteSpace(toolHandler.CompletionDraft?.FinalFlag)
+                && transcript.Actions.All(action => string.IsNullOrWhiteSpace(action.ExtractedFlag)))
+            {
+                _logger.LogWarning("Railway agent completed without a flag. Falling back to deterministic protocol execution.");
                 agentResult = await RunDeterministicFallbackAsync(hubClient, transcript).ConfigureAwait(false);
             }
 
@@ -245,18 +254,22 @@ public class RailwayTask
         var actions = string.Join(", ", helpDocument.Actions.Select(action => action.Action));
         return string.Join(Environment.NewLine,
             "You are an autonomous agent solving the railway task against a self-documenting hub API.",
+            "Your goal is to activate route X-01, which means the route must end in the open state unless the hub explicitly says otherwise.",
             "You must begin from the cached help response and trust only hub outputs.",
             $"The documented actions are: {actions}.",
             "Rules:",
             "1. Never invent undocumented action names or undocumented fields.",
             "2. Use get_cached_help before deciding if you need to re-read the documentation.",
-            "3. Use execute_documented_action only with exact action names and separate JSON fields such as route and value. Never concatenate parameters into the action string.",
-            "4. Minimize the number of hub calls because the API is heavily rate-limited.",
-            "5. Treat business errors as protocol guidance and adapt only from the returned response.",
-            "6. If any tool response contains extractedFlag, stop immediately.",
-            "7. After the flag is found, call finish_with_result once and then return only the final JSON matching the schema.",
-            "8. If you are uncertain, inspect get_execution_history instead of guessing.",
-            "9. Do not include markdown in the final response.");
+            "3. Use only these action tools: get_route_status, enable_reconfigure_mode, set_route_status, and save_route_configuration.",
+            "4. Always pass route as a separate tool argument, for example X-01. Never put route or value inside an action string.",
+            "5. If the route is already open, do not close it. Never choose RTCLOSE unless the hub explicitly instructs you to do so.",
+            "6. If a status change is needed to activate the route, prefer RTOPEN.",
+            "7. Minimize the number of hub calls because the API is heavily rate-limited.",
+            "8. Treat business errors as protocol guidance and adapt only from the returned response.",
+            "9. If any tool response contains extractedFlag, stop immediately.",
+            "10. After the flag is found, call finish_with_result once and then return only the final JSON matching the schema.",
+            "11. If you are uncertain, inspect get_execution_history instead of guessing.",
+            "12. Do not include markdown in the final response.");
     }
 
     private string BuildUserPrompt(RailwayHubResponse helpResponse, RailwayHelpDocument helpDocument, RailwayExecutionTranscript transcript)
@@ -272,7 +285,8 @@ public class RailwayTask
                 "The first hub request has already been executed with action help and its result is cached.",
                 "The hub may return 503 overload responses and strict rate-limit headers; transport control is handled by tools.",
                 "Stop as soon as the response body contains a flag in the format {FLG:...}.",
-                "Do not guess action ordering or parameters. Follow the documentation returned by help and later hub responses exactly."
+                "Do not guess action ordering or parameters. Follow the documentation returned by help and later hub responses exactly.",
+                "The business goal is to activate route X-01, so the desired final route status is open."
             },
             cachedHelp = new
             {

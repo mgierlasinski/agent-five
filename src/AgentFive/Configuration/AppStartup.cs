@@ -1,3 +1,4 @@
+using AgentFive.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -9,9 +10,8 @@ public static class AppStartup
 {
     public static IConfiguration BuildConfiguration()
     {
-        var basePath = AppContext.BaseDirectory ?? Directory.GetCurrentDirectory();
         var config = new ConfigurationBuilder()
-            .SetBasePath(basePath)
+            .SetBasePath(FileHelper.BasePath)
             .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
             .AddUserSecrets<Program>()
             .Build();
@@ -24,7 +24,7 @@ public static class AppStartup
         using var log = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.Console()
-            .WriteTo.File("log-.txt", rollingInterval: RollingInterval.Day)
+            .WriteTo.File(Path.Combine(FileHelper.BasePath, "Logs", "log-.txt"), rollingInterval: RollingInterval.Day)
             .CreateLogger();
 
         using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddSerilog(log));

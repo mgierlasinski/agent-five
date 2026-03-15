@@ -4,14 +4,13 @@ using System.Text.Json.Serialization;
 using AgentFive.Configuration;
 using AgentFive.Services.OpenRouter;
 using AgentFive.Tasks.People;
+using AgentFive.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace AgentFive.Tasks.FindHim;
 
 public class FindHimTask
 {
-    private const string VerifyRequest = "Artifacts/findhim_verify_request.json";
-    private const string VerifyResponse = "Artifacts/findhim_verify_response.json";
 	private const int MaxAgentIterations = 12;
 
 	private readonly HubSettings _hubSettings;
@@ -35,11 +34,11 @@ public class FindHimTask
 		_hubClient = new HubClient(hubSettings, logger);
 	}
 
-	public async Task RunAsync()
+	public async Task RunAsync(string suspectsPath)
 	{
 		try
 		{
-			var suspects = LoadSuspects();
+			var suspects = LoadSuspects(suspectsPath);
 			var powerPlants = await GetPowerPlantsAsync().ConfigureAwait(false);
 			var result = await RunAgentAsync(suspects, powerPlants).ConfigureAwait(false);
 
@@ -66,23 +65,22 @@ public class FindHimTask
 		}
 	}
 
-	private List<TaggedPerson> LoadSuspects()
+	private List<TaggedPerson> LoadSuspects(string suspectsPath)
 	{
-		var inputPath = PeopleTask.PeopleTransport;
-		if (!File.Exists(inputPath))
+		if (!File.Exists(suspectsPath))
 		{
-			throw new FileNotFoundException($"Missing people transport file: {inputPath}", inputPath);
+			throw new FileNotFoundException($"Missing people transport file: {suspectsPath}", suspectsPath);
 		}
 
-		var json = File.ReadAllText(inputPath);
+		var json = File.ReadAllText(suspectsPath);
 		var suspects = JsonSerializer.Deserialize<List<TaggedPerson>>(json, _jsonOptions);
 
 		if (suspects == null || suspects.Count == 0)
 		{
-			throw new InvalidOperationException("people_transport.json is empty or invalid.");
+			throw new InvalidOperationException($"Missing or invalid suspects file: {suspectsPath}");
 		}
 
-		_logger.LogInformation("Loaded {Count} suspects from {Path}", suspects.Count, inputPath);
+		_logger.LogInformation("Loaded {Count} suspects from {Path}", suspects.Count, suspectsPath);
 		return suspects;
 	}
 
@@ -423,12 +421,11 @@ public class FindHimTask
 	private async Task VerifyAsync(VerifyRequest payload)
 	{
         var json = JsonSerializer.Serialize(payload, _jsonOptions);
-		await File.WriteAllTextAsync(VerifyRequest, json).ConfigureAwait(false);
+		await FileHelper.WriteArtifactAsync("findhim", "verify_request.json", json).ConfigureAwait(false);
 
 		var response = await _hubClient.VerifyAsync(payload).ConfigureAwait(false);
-
         json = JsonSerializer.Serialize(response, _jsonOptions);
-		await File.WriteAllTextAsync(VerifyResponse, json).ConfigureAwait(false);
+		await FileHelper.WriteArtifactAsync("findhim", "verify_response.json", json).ConfigureAwait(false);
 	}
 
 	private static double Haversine(double latitude1, double longitude1, double latitude2, double longitude2)
