@@ -1,6 +1,7 @@
 ﻿using AgentFive.Configuration;
 using AgentFive.Tasks.FindHim;
 using AgentFive.Tasks.People;
+using AgentFive.Tasks.Railway;
 using AgentFive.Tasks.SendIt;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -23,8 +24,9 @@ var tasks = new Dictionary<string, Func<Task>>
         }
         await new FindHimTask(hubSettings, openRouterSettings, logger).RunAsync();
     },
-    ["sendit"] = async () => await new SendItTask(hubSettings, openRouterSettings, logger).RunAsync()
+    ["sendit"] = async () => await new SendItTask(hubSettings, openRouterSettings, logger).RunAsync(),
+    ["railway"] = async () => await new RailwayTask(hubSettings, openRouterSettings, logger).RunAsync()
 };
 
 logger.LogInformation("Starting AgentFive. Available tasks: {Tasks}", string.Join(", ", tasks.Keys));
-//await tasks["sendit"].Invoke();
+await tasks["railway"].Invoke();
