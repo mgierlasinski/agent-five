@@ -27,18 +27,22 @@ public class OpenRouterService : IDisposable
 		_httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _settings.OpenRouterApiKey);
 	}
 
+	private async Task<string> SendCompletionsRequest(string json, CancellationToken cancellationToken = default)
+	{
+		using var content = new StringContent(json, Encoding.UTF8, "application/json");
+		using var response = await _httpClient.PostAsync("v1/chat/completions", content, cancellationToken).ConfigureAwait(false);
+		response.EnsureSuccessStatusCode();
+		
+		return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+	}
+
 	public async Task<ChatResponse?> GetResponseAsync(ChatPayload payload, CancellationToken cancellationToken = default)
 	{
 		LogChatPayloadCompact(payload);
-		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
-		using var content = new StringContent(json, Encoding.UTF8, "application/json");
-		using var resp = await _httpClient.PostAsync("v1/chat/completions", content, cancellationToken).ConfigureAwait(false);
-		resp.EnsureSuccessStatusCode();
-
-		var respText = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-		
-		return JsonSerializer.Deserialize<ChatResponse>(respText, _deserializeOptions);
+		var jsonRequest = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+		var jsonResponse = await SendCompletionsRequest(jsonRequest, cancellationToken).ConfigureAwait(false);
+		return JsonSerializer.Deserialize<ChatResponse>(jsonResponse, _deserializeOptions);
 	}
 
 	public async Task<TResponse?> GetStructuredResponseAsync<TResponse>(
@@ -149,43 +153,40 @@ public class OpenRouterService : IDisposable
 		};
 
 		var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-		using var content = new StringContent(json, Encoding.UTF8, "application/json");
-		using var response = await _httpClient.PostAsync("v1/chat/completions", content, cancellationToken).ConfigureAwait(false);
-		var responseText = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-		response.EnsureSuccessStatusCode();
+		_logger.LogInformation("AnalyzeImageAsync payload: {Payload}", json);
+		var responseText = await SendCompletionsRequest(json, cancellationToken).ConfigureAwait(false);
+		_logger.LogInformation("AnalyzeImageAsync response: {Response}", responseText);
 
-		using var document = JsonDocument.Parse(responseText);
-		var root = document.RootElement;
-		if (!root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
+		VisionResponse? responseObj;
+		try
 		{
+			responseObj = JsonSerializer.Deserialize<VisionResponse>(responseText, _deserializeOptions);
+		}
+		catch (JsonException ex)
+		{
+			_logger.LogError(ex, "Failed to deserialize vision response");
 			return null;
 		}
-
-		var firstChoice = choices[0];
-		if (firstChoice.TryGetProperty("message", out var message) && message.TryGetProperty("content", out var contentElement))
+		
+		var responseContent = responseObj?.Choices?.FirstOrDefault()?.Message?.Content;
+		if (responseContent is string strContent)
 		{
-			if (contentElement.ValueKind == JsonValueKind.String)
+			return strContent;
+		}
+		else if (responseContent is JsonElement jsonContent && jsonContent.ValueKind == JsonValueKind.Array)
+		{
+			var builder = new StringBuilder();
+			foreach (var item in jsonContent.EnumerateArray())
 			{
-				return contentElement.GetString();
-			}
-
-			if (contentElement.ValueKind == JsonValueKind.Array)
-			{
-				var builder = new StringBuilder();
-				foreach (var item in contentElement.EnumerateArray())
+				if (item.TryGetProperty("text", out var textElement))
 				{
-					if (item.TryGetProperty("text", out var textElement))
-					{
-						builder.Append(textElement.GetString());
-					}
+					builder.Append(textElement.GetString());
 				}
-				return builder.ToString();
 			}
+			return builder.ToString();
 		}
 
-		return firstChoice.TryGetProperty("content", out var choiceContent) && choiceContent.ValueKind == JsonValueKind.String
-			? choiceContent.GetString()
-			: null;
+		return null;
 	}
 
 	private ChatPayload BuildChatPayload(string model, string systemPrompt, string userPrompt, double temperature = 0.0, JsonSchemaObject? jsonSchema = null)
