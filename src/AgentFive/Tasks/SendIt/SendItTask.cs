@@ -9,7 +9,7 @@ namespace AgentFive.Tasks.SendIt;
 
 public class SendItTask
 {
-    private const string DeclarationOutput = "sendit_declaration.txt";
+    private const string DeclarationOutput = "Artifacts/sendit_declaration.txt";
     private const int MaxAgentIterations = 12;
 
     private readonly ILogger _logger;

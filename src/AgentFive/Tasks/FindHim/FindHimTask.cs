@@ -10,8 +10,8 @@ namespace AgentFive.Tasks.FindHim;
 
 public class FindHimTask
 {
-    private const string VerifyRequest = "findhim_verify_request.json";
-    private const string VerifyResponse = "findhim_verify_response.json";
+    private const string VerifyRequest = "Artifacts/findhim_verify_request.json";
+    private const string VerifyResponse = "Artifacts/findhim_verify_response.json";
 	private const int MaxAgentIterations = 12;
 
 	private readonly HubSettings _hubSettings;

@@ -8,8 +8,8 @@ namespace AgentFive.Tasks.SendIt;
 
 public class SpkClient : IDisposable
 {
-	private const string VerifyRequestFile = "sendit_verify_request.json";
-	private const string VerifyResponseFile = "sendit_verify_response.json";
+	private const string VerifyRequestFile = "Artifacts/sendit_verify_request.json";
+	private const string VerifyResponseFile = "Artifacts/sendit_verify_response.json";
 
 	private readonly HttpClient _httpClient;
 	private readonly HubSettings _settings;

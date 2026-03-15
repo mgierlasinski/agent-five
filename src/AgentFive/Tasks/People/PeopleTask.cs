@@ -8,8 +8,8 @@ namespace AgentFive.Tasks.People;
 public class PeopleTask
 {
 	public const string PeopleCsv = "Tasks/People/people.csv";
-    public const string PeopleTagged = "people_tagged.json";
-    public const string PeopleTransport = "people_transport.json";
+    public const string PeopleTagged = "Artifacts/people_tagged.json";
+    public const string PeopleTransport = "Artifacts/people_transport.json";
 
 	private DateTime Today => DateTime.Today;
 	private readonly ILogger _logger;
